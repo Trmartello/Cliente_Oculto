@@ -9,6 +9,8 @@ export interface FiltrosDashboard {
   postoId?: string;
   inicio?: Date;
   fim?: Date;
+  /** Cross-filter estilo BI: indicadores passam a usar o score deste bloco. */
+  blocoNome?: string;
 }
 
 interface ScoreBlocoSnapshot {
@@ -47,6 +49,7 @@ export interface DadosDashboard {
     prioridadeEstrategica: boolean;
   }[];
   oportunidadesPorPosto: {
+    postoId: string;
     posto: string;
     oportunidades: { nome: string; desempenho: number; impacto: number }[];
   }[];
@@ -86,6 +89,9 @@ export async function carregarDashboard(
         ...escopoNC(sessao),
         status: { in: ["ABERTA", "EM_ANDAMENTO"] },
         ...(filtros.postoId ? { visita: { postoId: filtros.postoId } } : {}),
+        ...(filtros.blocoNome
+          ? { pergunta: { bloco: { nome: filtros.blocoNome } } }
+          : {}),
       },
     }),
     prisma.resposta.groupBy({
@@ -94,14 +100,27 @@ export async function carregarDashboard(
         criticidadeSnapshot: { not: null },
         notaObtida: { not: null },
         visita: whereVisita,
+        ...(filtros.blocoNome
+          ? { pergunta: { bloco: { nome: filtros.blocoNome } } }
+          : {}),
       },
       _count: { _all: true },
     }),
   ]);
 
+  // Score de referência da visita: o final ou, no cross-filter, o do bloco.
+  function scoreDe(v: (typeof visitas)[number]): number | null {
+    if (!filtros.blocoNome) {
+      return v.scoreFinal === null ? null : Number(v.scoreFinal);
+    }
+    const blocos = (v.scoresPorBloco as unknown as ScoreBlocoSnapshot[]) ?? [];
+    const b = blocos.find((x) => x.nome === filtros.blocoNome);
+    return b && b.pontua && b.score !== null ? b.score : null;
+  }
+
   const scores = visitas
-    .filter((v) => v.scoreFinal !== null)
-    .map((v) => Number(v.scoreFinal));
+    .map(scoreDe)
+    .filter((s): s is number => s !== null);
 
   // ---- Ranking de postos ----
   const porPosto = new Map<
@@ -114,7 +133,8 @@ export async function carregarDashboard(
       scores: [],
       falhas: 0,
     };
-    if (v.scoreFinal !== null) atual.scores.push(Number(v.scoreFinal));
+    const s = scoreDe(v);
+    if (s !== null) atual.scores.push(s);
     if (v.temFalhaCritica) atual.falhas += 1;
     porPosto.set(v.posto.id, atual);
   }
@@ -131,10 +151,11 @@ export async function carregarDashboard(
   // ---- Evolução mensal ----
   const porMes = new Map<string, number[]>();
   for (const v of visitas) {
-    if (v.scoreFinal === null || !v.dataEnvio) continue;
+    const s = scoreDe(v);
+    if (s === null || !v.dataEnvio) continue;
     const d = new Date(v.dataEnvio);
     const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    porMes.set(chave, [...(porMes.get(chave) ?? []), Number(v.scoreFinal)]);
+    porMes.set(chave, [...(porMes.get(chave) ?? []), s]);
   }
   const evolucaoMensal = [...porMes.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -199,22 +220,28 @@ export async function carregarDashboard(
   // ---- Top-3 oportunidades por posto ----
   const blocosPorPosto = new Map<
     string,
-    Map<string, { scores: number[]; importancias: number[] }>
+    {
+      nome: string;
+      blocos: Map<string, { scores: number[]; importancias: number[] }>;
+    }
   >();
   for (const v of visitas) {
     const blocos = (v.scoresPorBloco as unknown as ScoreBlocoSnapshot[]) ?? [];
-    const mapa = blocosPorPosto.get(v.posto.nome) ?? new Map();
+    const entrada =
+      blocosPorPosto.get(v.posto.id) ??
+      { nome: v.posto.nome, blocos: new Map() };
     for (const b of blocos) {
       if (!b.pontua || b.score === null) continue;
-      const atual = mapa.get(b.nome) ?? { scores: [], importancias: [] };
+      const atual = entrada.blocos.get(b.nome) ?? { scores: [], importancias: [] };
       atual.scores.push(b.score);
       atual.importancias.push(b.pesoNormalizado * 100);
-      mapa.set(b.nome, atual);
+      entrada.blocos.set(b.nome, atual);
     }
-    blocosPorPosto.set(v.posto.nome, mapa);
+    blocosPorPosto.set(v.posto.id, entrada);
   }
   const oportunidadesPorPosto = [...blocosPorPosto.entries()]
-    .map(([posto, mapa]) => ({
+    .map(([postoId, { nome: posto, blocos: mapa }]) => ({
+      postoId,
       posto,
       oportunidades: [...mapa.entries()]
         .map(([nome, d]) => {
