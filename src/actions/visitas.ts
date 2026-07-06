@@ -63,7 +63,7 @@ export async function criarVisita(
   return {
     ok: true,
     visitaId: visita.id,
-    link: montarLinkAvaliacao(tokenBruto),
+    link: await montarLinkAvaliacao(tokenBruto),
   };
 }
 
@@ -115,7 +115,7 @@ export async function gerarNovoLink(
   ]);
 
   revalidatePath(`/visitas/${visitaId}`);
-  return { ok: true, visitaId, link: montarLinkAvaliacao(tokenBruto) };
+  return { ok: true, visitaId, link: await montarLinkAvaliacao(tokenBruto) };
 }
 
 export async function revogarLink(visitaId: string): Promise<void> {

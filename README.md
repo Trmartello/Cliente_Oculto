@@ -80,13 +80,35 @@ npm test
 
 1. Crie um serviço a partir deste repositório + um banco MySQL; aponte
    `DATABASE_URL` para a reference variable do banco.
-2. Variáveis: `AUTH_SECRET` (openssl rand -hex 32), `APP_URL` (URL pública,
-   usada nos links do avaliador), `STORAGE_DRIVER=s3` + `S3_ENDPOINT`,
+2. Variáveis: `AUTH_SECRET` (openssl rand -hex 32), `APP_URL` (opcional — ver
+   abaixo), `STORAGE_DRIVER=s3` + `S3_ENDPOINT`,
    `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
    (Cloudflare R2, Backblaze B2 ou MinIO — o filesystem do Railway é efêmero,
    não use `local` em produção).
 3. Pre-deploy command: `npx prisma migrate deploy`. Build/start padrão do
    Next.js (`npm run build` / `npm run start`).
+
+### Link do avaliador (celular) — como a URL é montada
+
+O link `/avaliar/<token>` (e o QR code, que usa a mesma string) é montado por
+`baseUrlPublica()` em `src/lib/token-avaliacao.ts`, nesta ordem:
+
+1. `APP_URL`, se configurada com endereço público (valores com
+   `localhost`/`127.0.0.1` são ignorados de propósito);
+2. cabeçalhos da própria requisição (`x-forwarded-proto`/`x-forwarded-host`
+   atrás de proxy — caso do Railway — ou `Host` direto);
+3. fallback `http://localhost:3000` (apenas dev/scripts).
+
+Ou seja: **em produção o link funciona mesmo sem `APP_URL`**, herdando o
+domínio pelo qual a Controladoria acessou o sistema. Configure `APP_URL`
+apenas para forçar um domínio específico (ex.: domínio próprio).
+
+*Causa raiz do bug corrigido (jul/2026): `APP_URL` em produção ficou com o
+valor de desenvolvimento (`http://localhost:3000`) e o link/QR gerados
+apontavam para localhost — `ERR_CONNECTION_REFUSED` no celular do avaliador.
+Além da derivação automática acima, a validação de tokens passou a registrar
+logs (`[avaliacao] token …` com o motivo de recusa) e a geração de links
+registra a base usada (`[link-avaliacao] …`).*
 
 ## Estrutura
 
