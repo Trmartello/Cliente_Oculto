@@ -78,6 +78,56 @@ function BotaoOpcao({
   );
 }
 
+const ROTULO_NOTA_5: Record<number, string> = {
+  1: "Muito ruim",
+  2: "Ruim",
+  3: "Regular",
+  4: "Bom",
+  5: "Excelente",
+};
+
+function Estrelas({
+  valor,
+  onChange,
+}: {
+  valor: number | null;
+  onChange: (nota: number) => void;
+}) {
+  return (
+    <div>
+      <div role="radiogroup" aria-label="Nota de 1 a 5 estrelas" className="flex justify-between gap-1">
+        {[1, 2, 3, 4, 5].map((n) => {
+          const cheia = valor !== null && n <= valor;
+          return (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={valor === n}
+              aria-label={`${n} estrela${n > 1 ? "s" : ""} — ${ROTULO_NOTA_5[n]}`}
+              onClick={() => onChange(n)}
+              className="flex h-12 flex-1 items-center justify-center rounded-lg active:bg-amber-50"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className={`h-9 w-9 transition ${
+                  cheia ? "fill-amber-400 stroke-amber-500" : "fill-white stroke-slate-300"
+                }`}
+                strokeWidth="1.5"
+              >
+                <path d="M12 2.5l2.95 5.98 6.6.96-4.78 4.65 1.13 6.58L12 17.57l-5.9 3.1 1.13-6.58L2.45 9.44l6.6-.96L12 2.5z" />
+              </svg>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-center text-sm font-medium text-slate-600" aria-live="polite">
+        {valor !== null ? `${valor} de 5 — ${ROTULO_NOTA_5[valor]}` : "Toque nas estrelas para avaliar"}
+      </p>
+    </div>
+  );
+}
+
 function FotoUpload({
   token,
   perguntaId,
@@ -147,6 +197,60 @@ function FotoUpload({
           const f = e.target.files?.[0];
           if (f) enviar(f);
         }}
+      />
+    </div>
+  );
+}
+
+// Área expansível de comentário + fotos exibida sob cada item avaliado.
+function ComentarioFoto({
+  token,
+  perguntaId,
+  comentario,
+  evidencias,
+  onComentario,
+  onNovaEvidencia,
+}: {
+  token: string;
+  perguntaId: string;
+  comentario: string | null;
+  evidencias: string[];
+  onComentario: (texto: string) => void;
+  onNovaEvidencia: (id: string) => void;
+}) {
+  const [aberto, setAberto] = useState(
+    Boolean(comentario) || evidencias.length > 0,
+  );
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 px-3 text-sm font-medium text-slate-600 active:bg-slate-50"
+      >
+        💬 Comentário&ensp;·&ensp;📷 Foto
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-xl bg-slate-50 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Comentário e fotos deste item
+      </p>
+      <textarea
+        value={comentario ?? ""}
+        onChange={(e) => onComentario(e.target.value)}
+        rows={2}
+        placeholder="Comentário (opcional)"
+        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+      />
+      <FotoUpload
+        token={token}
+        perguntaId={perguntaId}
+        evidencias={evidencias}
+        onNovaEvidencia={onNovaEvidencia}
       />
     </div>
   );
@@ -328,15 +432,18 @@ export function AvaliacaoWizard({
                         </BotaoOpcao>
                       </div>
                     )}
-                    {(p.tipo === "NOTA_1_5" || p.tipo === "NOTA_1_10") && (
-                      <div
-                        className={`grid gap-1.5 ${
-                          p.tipo === "NOTA_1_5" ? "grid-cols-5" : "grid-cols-5"
-                        }`}
-                      >
-                        {Array.from(
-                          { length: p.tipo === "NOTA_1_5" ? 5 : 10 },
-                          (_, i) => String(i + 1),
+                    {p.tipo === "NOTA_1_5" && (
+                      <Estrelas
+                        valor={r.valor ? Number(r.valor) : null}
+                        onChange={(nota) =>
+                          atualizar(p.id, { valor: String(nota) })
+                        }
+                      />
+                    )}
+                    {p.tipo === "NOTA_1_10" && (
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {Array.from({ length: 10 }, (_, i) =>
+                          String(i + 1),
                         ).map((n) => (
                           <button
                             key={n}
@@ -398,31 +505,21 @@ export function AvaliacaoWizard({
                 )}
 
                 {p.tipo !== "FOTO" && p.tipo !== "TEXTO" && !r.naoSeAplica && (
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-sm text-slate-500">
-                      Adicionar comentário / foto
-                    </summary>
-                    <textarea
-                      value={r.comentario ?? ""}
-                      onChange={(e) =>
-                        atualizar(p.id, { comentario: e.target.value })
-                      }
-                      rows={2}
-                      placeholder="Comentário (opcional)"
-                      className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                    />
-                    <FotoUpload
-                      token={token}
-                      perguntaId={p.id}
-                      evidencias={evidencias[p.id] ?? []}
-                      onNovaEvidencia={(id) =>
-                        setEvidencias((e) => ({
-                          ...e,
-                          [p.id]: [...(e[p.id] ?? []), id],
-                        }))
-                      }
-                    />
-                  </details>
+                  <ComentarioFoto
+                    token={token}
+                    perguntaId={p.id}
+                    comentario={r.comentario}
+                    evidencias={evidencias[p.id] ?? []}
+                    onComentario={(texto) =>
+                      atualizar(p.id, { comentario: texto })
+                    }
+                    onNovaEvidencia={(id) =>
+                      setEvidencias((e) => ({
+                        ...e,
+                        [p.id]: [...(e[p.id] ?? []), id],
+                      }))
+                    }
+                  />
                 )}
               </div>
             );

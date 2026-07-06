@@ -191,7 +191,7 @@ export function PerguntaForm({
     permiteNaoSeAplica: boolean;
   } | null;
 }) {
-  const [tipo, setTipo] = useState(pergunta?.tipo ?? "SIM_NAO");
+  const [tipo, setTipo] = useState(pergunta?.tipo ?? "NOTA_1_5");
   const [state, action, pending] = useActionState<ActionState, FormData>(
     salvarPergunta,
     {},
@@ -225,8 +225,8 @@ export function PerguntaForm({
               onChange={(e) => setTipo(e.target.value)}
               className={`mt-1 ${inputCls}`}
             >
+              <option value="NOTA_1_5">Estrelas (1 a 5)</option>
               <option value="SIM_NAO">Sim / Não</option>
-              <option value="NOTA_1_5">Nota 1 a 5</option>
               <option value="NOTA_1_10">Nota 1 a 10</option>
               <option value="ATENDE_NAO_ATENDE">Atende / Não Atende</option>
               <option value="TEXTO">Texto (informativa)</option>

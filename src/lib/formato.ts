@@ -47,7 +47,7 @@ export const COR_CRITICIDADE: Record<string, string> = {
 
 export const ROTULO_TIPO_PERGUNTA: Record<string, string> = {
   SIM_NAO: "Sim / Não",
-  NOTA_1_5: "Nota 1 a 5",
+  NOTA_1_5: "Estrelas (1 a 5)",
   NOTA_1_10: "Nota 1 a 10",
   ATENDE_NAO_ATENDE: "Atende / Não Atende",
   TEXTO: "Texto",

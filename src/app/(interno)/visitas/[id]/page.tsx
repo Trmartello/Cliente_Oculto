@@ -53,6 +53,26 @@ function valorLegivel(valor: string | null, naoSeAplica: boolean): string {
   return mapa[valor] ?? valor;
 }
 
+function EstrelasLidas({ nota }: { nota: number }) {
+  return (
+    <span
+      className="whitespace-nowrap"
+      aria-label={`${nota} de 5 estrelas`}
+      title={`${nota} de 5`}
+    >
+      <span className="text-base leading-none text-amber-500">
+        {"★".repeat(nota)}
+      </span>
+      <span className="text-base leading-none text-slate-300">
+        {"★".repeat(5 - nota)}
+      </span>
+      <span className="ml-1 align-middle text-xs text-slate-500">
+        {nota}/5
+      </span>
+    </span>
+  );
+}
+
 export default async function VisitaDetalhePage({
   params,
 }: {
@@ -305,16 +325,22 @@ export default async function VisitaDetalhePage({
                               {ROTULO_CRITICIDADE[p.criticidade]}
                             </Badge>
                           )}
-                          <span
-                            className={`font-semibold ${
-                              r?.reprovada ? "text-red-600" : "text-slate-900"
-                            }`}
-                          >
-                            {valorLegivel(
-                              r?.valor ?? null,
-                              r?.naoSeAplica ?? false,
-                            )}
-                          </span>
+                          {p.tipo === "NOTA_1_5" &&
+                          r?.valor &&
+                          !r.naoSeAplica ? (
+                            <EstrelasLidas nota={Number(r.valor)} />
+                          ) : (
+                            <span
+                              className={`font-semibold ${
+                                r?.reprovada ? "text-red-600" : "text-slate-900"
+                              }`}
+                            >
+                              {valorLegivel(
+                                r?.valor ?? null,
+                                r?.naoSeAplica ?? false,
+                              )}
+                            </span>
+                          )}
                         </div>
                       </li>
                     );

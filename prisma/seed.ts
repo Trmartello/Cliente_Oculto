@@ -24,20 +24,20 @@ const BLOCOS_SEED: { nome: string; peso: number; perguntas: PerguntaSeed[] }[] =
     nome: "Atendimento",
     peso: 30,
     perguntas: [
-      { texto: "O frentista cumprimentou o cliente?", tipo: "SIM_NAO", peso: 4, criticidade: "MEDIA" },
+      { texto: "O frentista cumprimentou o cliente?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA" },
       { texto: "Apresentação pessoal e uniforme adequados?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA" },
-      { texto: "Confirmou o combustível e o valor antes de abastecer?", tipo: "SIM_NAO", peso: 8, criticidade: "CRITICA" },
+      { texto: "Confirmou o combustível e o valor antes de abastecer?", tipo: "NOTA_1_5", peso: 8, criticidade: "CRITICA" },
       { texto: "Agilidade no atendimento (tempo de espera)?", tipo: "NOTA_1_5", peso: 4, criticidade: "ALTA" },
-      { texto: "Agradeceu e convidou o cliente a retornar?", tipo: "SIM_NAO", peso: 3, criticidade: "BAIXA" },
+      { texto: "Agradeceu e convidou o cliente a retornar?", tipo: "NOTA_1_5", peso: 3, criticidade: "BAIXA" },
     ],
   },
   {
     nome: "Segurança",
     peso: 20,
     perguntas: [
-      { texto: "Solicitou que o motor fosse desligado?", tipo: "SIM_NAO", peso: 6, criticidade: "CRITICA" },
-      { texto: "Frentista utilizava EPI completo?", tipo: "SIM_NAO", peso: 5, criticidade: "ALTA" },
-      { texto: "Ausência de uso de celular na pista?", tipo: "SIM_NAO", peso: 4, criticidade: "ALTA" },
+      { texto: "Solicitou que o motor fosse desligado?", tipo: "NOTA_1_5", peso: 6, criticidade: "CRITICA" },
+      { texto: "Frentista utilizava EPI completo?", tipo: "NOTA_1_5", peso: 5, criticidade: "ALTA" },
+      { texto: "Ausência de uso de celular na pista?", tipo: "NOTA_1_5", peso: 4, criticidade: "ALTA" },
       { texto: "Organização e sinalização da pista?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA" },
     ],
   },
@@ -45,10 +45,10 @@ const BLOCOS_SEED: { nome: string; peso: number; perguntas: PerguntaSeed[] }[] =
     nome: "Venda Consultiva",
     peso: 20,
     perguntas: [
-      { texto: "Ofereceu aditivo ou produto premium?", tipo: "SIM_NAO", peso: 5, criticidade: "MEDIA" },
-      { texto: "Ofereceu verificação de óleo/água?", tipo: "SIM_NAO", peso: 4, criticidade: "MEDIA" },
-      { texto: "Ofereceu calibragem dos pneus?", tipo: "SIM_NAO", peso: 3, criticidade: "BAIXA" },
-      { texto: "Divulgou o programa de fidelidade?", tipo: "SIM_NAO", peso: 4, criticidade: "MEDIA" },
+      { texto: "Ofereceu aditivo ou produto premium?", tipo: "NOTA_1_5", peso: 5, criticidade: "MEDIA" },
+      { texto: "Ofereceu verificação de óleo/água?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA" },
+      { texto: "Ofereceu calibragem dos pneus?", tipo: "NOTA_1_5", peso: 3, criticidade: "BAIXA" },
+      { texto: "Divulgou o programa de fidelidade?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA" },
     ],
   },
   {
@@ -56,7 +56,7 @@ const BLOCOS_SEED: { nome: string; peso: number; perguntas: PerguntaSeed[] }[] =
     peso: 15,
     perguntas: [
       { texto: "Organização e limpeza da loja?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA", permiteNaoSeAplica: true },
-      { texto: "Produtos com precificação visível?", tipo: "ATENDE_NAO_ATENDE", peso: 4, criticidade: "MEDIA", permiteNaoSeAplica: true },
+      { texto: "Produtos com precificação visível?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA", permiteNaoSeAplica: true },
       { texto: "Disponibilidade de produtos nas gôndolas?", tipo: "NOTA_1_5", peso: 3, criticidade: "BAIXA", permiteNaoSeAplica: true },
       { texto: "Atendimento no caixa?", tipo: "NOTA_1_5", peso: 4, criticidade: "MEDIA", permiteNaoSeAplica: true },
     ],
@@ -66,7 +66,7 @@ const BLOCOS_SEED: { nome: string; peso: number; perguntas: PerguntaSeed[] }[] =
     peso: 10,
     perguntas: [
       { texto: "Limpeza geral dos banheiros?", tipo: "NOTA_1_5", peso: 4, criticidade: "ALTA" },
-      { texto: "Papel higiênico e sabonete disponíveis?", tipo: "SIM_NAO", peso: 3, criticidade: "MEDIA" },
+      { texto: "Papel higiênico e sabonete disponíveis?", tipo: "NOTA_1_5", peso: 3, criticidade: "MEDIA" },
       { texto: "Conservação (portas, torneiras, descargas)?", tipo: "NOTA_1_5", peso: 3, criticidade: "BAIXA" },
     ],
   },
@@ -75,8 +75,8 @@ const BLOCOS_SEED: { nome: string; peso: number; perguntas: PerguntaSeed[] }[] =
     peso: 5,
     perguntas: [
       { texto: "Limpeza externa e jardins?", tipo: "NOTA_1_5", peso: 2, criticidade: "BAIXA" },
-      { texto: "Comunicação visual e painel de preços legíveis?", tipo: "SIM_NAO", peso: 2, criticidade: "MEDIA" },
-      { texto: "Iluminação adequada?", tipo: "SIM_NAO", peso: 1, criticidade: "MEDIA" },
+      { texto: "Comunicação visual e painel de preços legíveis?", tipo: "NOTA_1_5", peso: 2, criticidade: "MEDIA" },
+      { texto: "Iluminação adequada?", tipo: "NOTA_1_5", peso: 1, criticidade: "MEDIA" },
       { texto: "Registre uma foto geral da fachada", tipo: "FOTO", peso: 0, criticidade: "BAIXA" },
     ],
   },
@@ -223,7 +223,11 @@ async function main() {
         if (p.tipo === "TEXTO" || p.tipo === "FOTO") continue;
         const critica = p.criticidade === "CRITICA";
         if (critica && opts.falhaCritica && p.texto.includes("combustível")) {
-          respostas.push({ perguntaId: p.id, valor: "NAO" });
+          // nota 1 em pergunta CRITICA => razão 0.2 <= 0.4 => falha crítica
+          respostas.push({
+            perguntaId: p.id,
+            valor: p.tipo === "NOTA_1_5" ? "1" : "NAO",
+          });
           continue;
         }
         // Determinístico: alterna acertos conforme a "qualidade".
