@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum Papel {
+  ADMIN
+  CONTROLADORIA
+  GESTOR_REGIONAL
+  GERENTE
+  CONSULTA
+}
+
+enum TipoPergunta {
+  SIM_NAO
+  NOTA_1_5
+  NOTA_1_10
+  ATENDE_NAO_ATENDE
+  TEXTO
+  FOTO
+}
+
+enum Criticidade {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum StatusQuestionario {
+  RASCUNHO
+  ATIVO
+  ARQUIVADO
+}
+
+enum StatusVisita {
+  AGENDADA
+  EM_ANDAMENTO
+  ENVIADA
+  EXPIRADA
+  CANCELADA
+}
+
+enum StatusToken {
+  ATIVO
+  USADO
+  EXPIRADO
+  REVOGADO
+}
+
+enum FaixaIgeo {
+  EXCELENCIA
+  MUITO_BOM
+  BOM
+  REGULAR
+  CRITICO
+}
+
+enum OrigemNC {
+  FALHA_CRITICA
+  SCORE_ABAIXO_META
+  MANUAL
+}
+
+enum StatusNC {
+  ABERTA
+  EM_ANDAMENTO
+  RESOLVIDA
+  CANCELADA
+}
+
+enum Prioridade {
+  BAIXA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+enum StatusAcao {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+// Regra de penalidade quando uma pergunta CRITICA é reprovada.
+// Parametrizável por questionário — nada de valores fixos no código.
+enum TipoPenalidadeCritica {
+  NENHUMA
+  PERCENTUAL // reduz o score final em X%
+  TETO // limita o score final a no máximo X
+}
+
+enum TipoEvidencia {
+  FOTO
+}
+
+// ============ CADASTROS ============
+
+model Posto {
+  id       String  @id @default(cuid())
+  codigo   String  @unique
+  nome     String
+  bandeira String?
+  endereco String?
+  cidade   String
+  uf       String  @db.VarChar(2)
+  regiao   String // escopo do Gestor Regional
+  ativo    Boolean @default(true)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  visitas  Visita[]
+  metas    Meta[]
+  usuarios Usuario[]
+}
+
+model Usuario {
+  id        String  @id @default(cuid())
+  nome      String
+  email     String  @unique
+  senhaHash String
+  papel     Papel
+  postoId   String? // GERENTE: escopo restrito ao próprio posto
+  regiao    String? // GESTOR_REGIONAL: escopo restrito à região
+  ativo     Boolean @default(true)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  posto            Posto?            @relation(fields: [postoId], references: [id])
+  visitasCriadas   Visita[]          @relation("VisitaCriadaPor")
+  ncsResponsavel   NaoConformidade[] @relation("NCResponsavel")
+  acoesResponsavel Acao[]            @relation("AcaoResponsavel")
+}
+
+// ============ QUESTIONÁRIO (motor de regras parametrizável) ============
+
+model Questionario {
+  id        String             @id @default(cuid())
+  nome      String
+  descricao String?            @db.Text
+  versao    Int                @default(1)
+  status    StatusQuestionario @default(RASCUNHO)
+
+  // Penalidade aplicada ao score final quando há falha crítica
+  penalidadeCriticaTipo  TipoPenalidadeCritica @default(TETO)
+  penalidadeCriticaValor Decimal               @default(74) @db.Decimal(5, 2)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  blocos  Bloco[]
+  visitas Visita[]
+}
+
+model Bloco {
+  id             String  @id @default(cuid())
+  questionarioId String
+  nome           String
+  peso           Decimal @db.Decimal(5, 2) // % — o motor normaliza se a soma != 100
+  ordem          Int
+
+  questionario Questionario @relation(fields: [questionarioId], references: [id], onDelete: Cascade)
+  perguntas    Pergunta[]
+
+  @@index([questionarioId, ordem])
+}
+
+model Pergunta {
+  id                 String       @id @default(cuid())
+  blocoId            String
+  texto              String       @db.Text
+  tipo               TipoPergunta
+  peso               Decimal      @db.Decimal(5, 2)
+  criticidade        Criticidade  @default(MEDIA)
+  obrigatoria        Boolean      @default(true)
+  permiteNaoSeAplica Boolean      @default(false)
+  notaMaxima         Decimal      @db.Decimal(5, 2)
+  ordem              Int
+
+  bloco     Bloco      @relation(fields: [blocoId], references: [id], onDelete: Cascade)
+  respostas Resposta[]
+  ncs       NaoConformidade[]
+
+  @@index([blocoId, ordem])
+}
+
+model Meta {
+  id             String    @id @default(cuid())
+  postoId        String? // null = meta de toda a rede
+  blocoNome      String? // null = meta do score geral; por nome para sobreviver a versões
+  scoreMinimo    Decimal   @db.Decimal(5, 2) // abaixo disso => NC automática
+  vigenciaInicio DateTime?
+  vigenciaFim    DateTime?
+
+  criadoEm DateTime @default(now())
+
+  posto Posto? @relation(fields: [postoId], references: [id])
+}
+
+// ============ VISITA / AVALIAÇÃO ============
+
+model Visita {
+  id             String       @id @default(cuid())
+  postoId        String
+  questionarioId String
+  criadaPorId    String
+  avaliadorNome  String? // o avaliador não possui conta
+  dataAgendada   DateTime
+  status         StatusVisita @default(AGENDADA)
+  dataInicio     DateTime?
+  dataEnvio      DateTime?
+
+  // ---- SNAPSHOT calculado no envio (imutável — histórico independe de
+  // mudanças futuras de pesos/perguntas) ----
+  scoreFinal      Decimal?   @db.Decimal(5, 2) // 0-100, já com penalidade
+  scoreBruto      Decimal?   @db.Decimal(5, 2) // 0-100, antes da penalidade
+  faixaIgeo       FaixaIgeo?
+  temFalhaCritica Boolean    @default(false)
+  scoresPorBloco  Json? // [{blocoId, nome, peso, pesoNormalizado, score}]
+  matrizJson      Json? // pontos importância×desempenho + top oportunidades
+
+  criadoEm DateTime @default(now())
+
+  posto            Posto             @relation(fields: [postoId], references: [id])
+  questionario     Questionario      @relation(fields: [questionarioId], references: [id])
+  criadaPor        Usuario           @relation("VisitaCriadaPor", fields: [criadaPorId], references: [id])
+  token            TokenAcesso?
+  respostas        Resposta[]
+  naoConformidades NaoConformidade[]
+
+  @@index([postoId, dataEnvio])
+  @@index([status])
+}
+
+model TokenAcesso {
+  id               String      @id @default(cuid())
+  visitaId         String      @unique
+  tokenHash        String      @unique // sha256 — o token cru só aparece uma vez na UI
+  expiraEm         DateTime
+  status           StatusToken @default(ATIVO)
+  primeiroAcessoEm DateTime?
+  usadoEm          DateTime?
+
+  criadoEm DateTime @default(now())
+
+  visita Visita @relation(fields: [visitaId], references: [id], onDelete: Cascade)
+}
+
+model Resposta {
+  id          String  @id @default(cuid())
+  visitaId    String
+  perguntaId  String
+  valor       String? @db.Text // "SIM"/"NAO"/"ATENDE"/"NAO_ATENDE"/número/texto
+  naoSeAplica Boolean @default(false)
+  comentario  String? @db.Text
+
+  // ---- SNAPSHOT por item, copiado da Pergunta/Bloco no envio ----
+  notaObtida           Decimal?     @db.Decimal(5, 2)
+  notaMaximaSnapshot   Decimal?     @db.Decimal(5, 2)
+  pesoPerguntaSnapshot Decimal?     @db.Decimal(5, 2)
+  pesoBlocoSnapshot    Decimal?     @db.Decimal(5, 2)
+  criticidadeSnapshot  Criticidade?
+  scoreItem            Decimal?     @db.Decimal(7, 4)
+  reprovada            Boolean      @default(false)
+
+  atualizadoEm DateTime @updatedAt
+
+  visita     Visita      @relation(fields: [visitaId], references: [id], onDelete: Cascade)
+  pergunta   Pergunta    @relation(fields: [perguntaId], references: [id])
+  evidencias Evidencia[]
+
+  @@unique([visitaId, perguntaId])
+}
+
+model Evidencia {
+  id           String        @id @default(cuid())
+  respostaId   String? // evidência de resposta do avaliador
+  acaoId       String? // OU foto da correção de um plano de ação
+  tipo         TipoEvidencia @default(FOTO)
+  storageKey   String
+  mimeType     String
+  tamanhoBytes Int
+
+  criadoEm DateTime @default(now())
+
+  resposta Resposta? @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  acao     Acao?     @relation(fields: [acaoId], references: [id], onDelete: Cascade)
+}
+
+// ============ NÃO CONFORMIDADES / PLANO DE AÇÃO ============
+
+model NaoConformidade {
+  id            String     @id @default(cuid())
+  visitaId      String
+  perguntaId    String? // origem FALHA_CRITICA
+  origem        OrigemNC
+  descricao     String     @db.Text
+  prioridade    Prioridade
+  status        StatusNC   @default(ABERTA)
+  responsavelId String?
+  prazo         DateTime?
+  dataConclusao DateTime?
+
+  criadoEm DateTime @default(now())
+
+  visita      Visita   @relation(fields: [visitaId], references: [id])
+  pergunta    Pergunta? @relation(fields: [perguntaId], references: [id])
+  responsavel Usuario? @relation("NCResponsavel", fields: [responsavelId], references: [id])
+  acoes       Acao[]
+
+  @@index([status, prioridade])
+}
+
+model Acao {
+  id                String     @id @default(cuid())
+  naoConformidadeId String
+  descricao         String     @db.Text
+  responsavelId     String?
+  prazo             DateTime?
+  prioridade        Prioridade @default(MEDIA)
+  status            StatusAcao @default(PENDENTE)
+  dataConclusao     DateTime?
+  comentarios       String?    @db.Text
+
+  criadoEm DateTime @default(now())
+
+  naoConformidade NaoConformidade @relation(fields: [naoConformidadeId], references: [id], onDelete: Cascade)
+  responsavel     Usuario?        @relation("AcaoResponsavel", fields: [responsavelId], references: [id])
+  evidencias      Evidencia[]
+}
