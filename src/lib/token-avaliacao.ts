@@ -71,7 +71,8 @@ export async function validarToken(tokenBruto: string): Promise<ValidacaoToken> 
     console.warn(`[avaliacao] token ${ref}… recusado: INVALIDO (não existe)`);
     return { ok: false, motivo: "INVALIDO" };
   }
-  if (token.status === "USADO" || token.visita.status === "ENVIADA") {
+  // Tokens legados marcados como usados (antes da janela de revisão).
+  if (token.status === "USADO") {
     console.warn(`[avaliacao] token ${ref}… recusado: USADO (visita ${token.visitaId})`);
     return { ok: false, motivo: "USADO" };
   }
@@ -87,8 +88,12 @@ export async function validarToken(tokenBruto: string): Promise<ValidacaoToken> 
           where: { id: token.id },
           data: { status: "EXPIRADO", tokenPlano: null },
         }),
-        prisma.visita.update({
-          where: { id: token.visitaId },
+        // visita já enviada permanece ENVIADA — só o acesso se encerra
+        prisma.visita.updateMany({
+          where: {
+            id: token.visitaId,
+            status: { in: ["AGENDADA", "EM_ANDAMENTO"] },
+          },
           data: { status: "EXPIRADA" },
         }),
       ]);
@@ -98,6 +103,9 @@ export async function validarToken(tokenBruto: string): Promise<ValidacaoToken> 
     );
     return { ok: false, motivo: "EXPIRADO" };
   }
+
+  // Visita ENVIADA dentro da validade: o avaliador pode revisar e reenviar.
+  // (Após expirar, o bloco acima encerra visualização e edição.)
 
   // Primeiro acesso: marca a visita como em andamento.
   if (!token.primeiroAcessoEm) {

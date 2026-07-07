@@ -563,6 +563,8 @@ export function AvaliacaoWizard({
   respostasIniciais,
   observacoesIniciais,
   blocosNAIniciais,
+  jaEnviada = false,
+  revisavelAte,
 }: {
   token: string;
   posto: string;
@@ -570,6 +572,10 @@ export function AvaliacaoWizard({
   respostasIniciais: Record<string, RespostaLocal>;
   observacoesIniciais: Record<string, ObservacaoLocal[]>;
   blocosNAIniciais: Record<string, BlocoNALocal>;
+  /** Avaliação já enviada — o avaliador está revisando dentro do prazo. */
+  jaEnviada?: boolean;
+  /** Data-limite (formatada) para revisar/reenviar. */
+  revisavelAte?: string;
 }) {
   // Navegação livre: o avaliador escolhe a ordem das etapas no hub.
   const [tela, setTela] = useState<Tela>({ tipo: "hub" });
@@ -756,6 +762,15 @@ export function AvaliacaoWizard({
           {tela.tipo === "revisao" && "Revisão final"}
         </p>
       </header>
+
+      {jaEnviada && (
+        <p className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          ✓ Avaliação enviada. Você pode revisar qualquer etapa e{" "}
+          <strong>reenviar</strong>
+          {revisavelAte ? ` até ${revisavelAte}` : " enquanto o link estiver válido"}
+          . Depois disso o acesso é encerrado.
+        </p>
+      )}
 
       {erro && (
         <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
@@ -1183,7 +1198,11 @@ export function AvaliacaoWizard({
                 disabled={salvando || etapasPendentes.length > 0}
                 className="min-h-12 flex-1 rounded-xl bg-emerald-600 text-base font-bold text-white active:bg-emerald-700 disabled:opacity-50"
               >
-                {salvando ? "Enviando…" : "Enviar avaliação"}
+                {salvando
+                  ? "Enviando…"
+                  : jaEnviada
+                    ? "Reenviar avaliação"
+                    : "Enviar avaliação"}
               </button>
             </>
           )}

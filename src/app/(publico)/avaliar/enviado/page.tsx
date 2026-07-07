@@ -13,6 +13,11 @@ export default function EnviadoPage() {
         Suas respostas foram registradas com sucesso. Obrigado pela
         participação — você já pode fechar esta página.
       </p>
+      <p className="mt-3 max-w-sm text-sm text-slate-500">
+        Precisa revisar algum ponto? Enquanto o link da avaliação estiver
+        dentro da validade, é só abri-lo de novo, ajustar e reenviar. Após o
+        prazo, o acesso é encerrado.
+      </p>
     </main>
   );
 }

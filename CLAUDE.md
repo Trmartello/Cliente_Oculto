@@ -77,16 +77,21 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
   query** de dados. ADMIN/CONTROLADORIA veem tudo; GESTOR_REGIONAL só a região;
   GERENTE só o posto; CONSULTA só leitura. Nunca remova o escopo de uma query.
 - **Token do avaliador**: guardado como **hash sha256**. `validarToken` decide na
-  ordem USADO → REVOGADO → EXPIRADO; expiração é **lazy** (persistida só no
-  acesso, sem cron — é por design).
+  ordem USADO (legado) → REVOGADO → EXPIRADO; expiração é **lazy** (persistida só
+  no acesso, sem cron — é por design). **Janela de revisão**: o envio NÃO marca o
+  token como usado — visita ENVIADA continua acessível para revisar/reenviar até
+  `expiraEm` (reenvio recalcula snapshots e substitui NCs automáticas; as manuais
+  ficam). Ao expirar, visita ENVIADA permanece ENVIADA (só AGENDADA/EM_ANDAMENTO
+  viram EXPIRADA).
 - **Link público** (`baseUrlPublica()` em `token-avaliacao.ts`): resolve na ordem
   (1) `APP_URL` se **não** for localhost; (2) `x-forwarded-proto/host` (proxy do
   Railway) ou `Host`; (3) fallback dev. **Por isso o link funciona em produção
   sem `APP_URL`.** Nunca volte a montar link com valor fixo/localhost.
 - **`TokenAcesso.tokenPlano`**: token cru guardado **apenas enquanto ATIVO**, para
-  permitir reenvio (WhatsApp/copiar). É **zerado** ao usar/revogar/expirar
-  (`enviarAvaliacao`, `revogarLink`, `cancelarVisita`, `validarToken`). Não exiba
-  nem persista o token cru fora desse estado.
+  permitir reenvio (WhatsApp/copiar). É **zerado** ao revogar/cancelar/expirar
+  (`revogarLink`, `cancelarVisita`, `validarToken`) — o envio da avaliação **não**
+  zera mais (janela de revisão). Não exiba nem persista o token cru fora do
+  estado ATIVO.
 
 ## Dashboard BI (cross-filter, seleção MÚLTIPLA)
 

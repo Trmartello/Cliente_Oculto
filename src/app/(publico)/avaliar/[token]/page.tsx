@@ -47,6 +47,7 @@ export default async function AvaliarPage({
     where: { id: validacao.visitaId },
     include: {
       posto: true,
+      token: { select: { expiraEm: true } },
       questionario: {
         include: {
           blocos: {
@@ -139,6 +140,17 @@ export default async function AvaliarPage({
       respostasIniciais={respostasIniciais}
       observacoesIniciais={observacoesIniciais}
       blocosNAIniciais={blocosNAIniciais}
+      jaEnviada={visita.status === "ENVIADA"}
+      revisavelAte={
+        visita.token
+          ? new Intl.DateTimeFormat("pt-BR", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              timeZone: "UTC",
+            }).format(visita.token.expiraEm)
+          : undefined
+      }
     />
   );
 }

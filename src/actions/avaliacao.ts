@@ -493,6 +493,14 @@ export async function enviarAvaliacao(
       },
     });
 
+    // Reenvio dentro da janela de revisão: as NCs automáticas anteriores
+    // são substituídas pelas do novo resultado (as manuais permanecem).
+    await tx.naoConformidade.deleteMany({
+      where: {
+        visitaId: visita.id,
+        origem: { in: ["FALHA_CRITICA", "SCORE_ABAIXO_META"] },
+      },
+    });
     for (const nc of resultado.ncsACriar) {
       await tx.naoConformidade.create({
         data: {
@@ -506,10 +514,12 @@ export async function enviarAvaliacao(
       });
     }
 
+    // O token permanece ATIVO até expirar: dentro da validade o avaliador
+    // pode reabrir o link para revisar e reenviar. Ao expirar (lazy, em
+    // validarToken) o acesso se encerra e o token cru é zerado.
     await tx.tokenAcesso.update({
       where: { id: validacao.tokenId },
-      // zera o token cru: concluída a avaliação, o link não é mais recuperável
-      data: { status: "USADO", usadoEm: agora, tokenPlano: null },
+      data: { usadoEm: agora },
     });
   });
 
