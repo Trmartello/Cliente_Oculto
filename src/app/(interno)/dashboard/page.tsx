@@ -12,6 +12,7 @@ import {
 import {
   BenchmarkChart,
   BlocosTable,
+  CiclosChart,
   EvolucaoChart,
   FiltrosAtivos,
   MatrizChart,
@@ -42,6 +43,7 @@ export default async function DashboardPage({
     fim?: string;
     bloco?: string | string[];
     mes?: string | string[];
+    ciclo?: string | string[];
   }>;
 }) {
   const sessao = await exigirSessao();
@@ -49,12 +51,16 @@ export default async function DashboardPage({
   const postosSel = lista(params.posto);
   const blocosSel = lista(params.bloco);
   const mesesSel = lista(params.mes);
+  const ciclosSel = lista(params.ciclo);
   const { inicio, fim } = params;
 
-  const postos = await prisma.posto.findMany({
-    where: { ativo: true, ...escopoPosto(sessao) },
-    orderBy: { nome: "asc" },
-  });
+  const [postos, ciclosTodos] = await Promise.all([
+    prisma.posto.findMany({
+      where: { ativo: true, ...escopoPosto(sessao) },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.ciclo.findMany({ select: { id: true, nome: true } }),
+  ]);
 
   const dados = await carregarDashboard(sessao, {
     postoIds: postosSel.length ? postosSel : undefined,
@@ -62,12 +68,17 @@ export default async function DashboardPage({
     fim: fim ? new Date(`${fim}T23:59:59`) : undefined,
     blocosNomes: blocosSel.length ? blocosSel : undefined,
     meses: mesesSel.length ? mesesSel : undefined,
+    ciclosIds: ciclosSel.length ? ciclosSel : undefined,
   });
 
   const postosSelecionados = postosSel
     .map((id) => postos.find((p) => p.id === id))
     .filter((p): p is (typeof postos)[number] => Boolean(p))
     .map((p) => ({ id: p.id, nome: p.nome }));
+
+  const ciclosSelecionados = ciclosSel
+    .map((id) => ciclosTodos.find((c) => c.id === id))
+    .filter((c): c is (typeof ciclosTodos)[number] => Boolean(c));
 
   const rotuloPeriodo =
     inicio || fim
@@ -134,6 +145,9 @@ export default async function DashboardPage({
         {mesesSel.map((m) => (
           <input key={m} type="hidden" name="mes" value={m} />
         ))}
+        {ciclosSel.map((c) => (
+          <input key={c} type="hidden" name="ciclo" value={c} />
+        ))}
         <button
           type="submit"
           className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
@@ -147,6 +161,7 @@ export default async function DashboardPage({
         postos={postosSelecionados}
         blocos={blocosSel}
         meses={mesesSel}
+        ciclos={ciclosSelecionados}
         periodo={rotuloPeriodo}
       />
 
@@ -266,6 +281,25 @@ export default async function DashboardPage({
               />
             </Card>
           </div>
+
+          {dados.comparativoCiclos.length > 0 && (
+            <div className="mb-6">
+              <Card>
+                <h2 className="mb-1 font-semibold text-slate-900">
+                  Comparativo de ciclos
+                </h2>
+                <p className="mb-2 text-xs text-slate-500">
+                  Score médio de cada ciclo/campanha — clique para filtrar o
+                  painel por ciclo.
+                </p>
+                <CiclosChart
+                  dados={dados.comparativoCiclos}
+                  meta={dados.metaScore ?? 85}
+                  ciclosSelecionados={ciclosSel}
+                />
+              </Card>
+            </div>
+          )}
 
           <div className="mb-6 grid gap-4 lg:grid-cols-2">
             <Card>

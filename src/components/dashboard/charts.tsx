@@ -103,12 +103,14 @@ export function FiltrosAtivos({
   postos,
   blocos,
   meses,
+  ciclos = [],
   periodo,
 }: {
   /** Postos selecionados (id + nome já resolvido no servidor). */
   postos: { id: string; nome: string }[];
   blocos: string[];
   meses: string[];
+  ciclos?: { id: string; nome: string }[];
   /** Rótulo do período manual (De/Até), quando preenchido no formulário. */
   periodo: string | null;
 }) {
@@ -128,6 +130,11 @@ export function FiltrosAtivos({
       chave: `bloco:${b}`,
       rotulo: `Bloco: ${b}`,
       remover: () => toggle("bloco", b),
+    })),
+    ...ciclos.map((c) => ({
+      chave: `ciclo:${c.id}`,
+      rotulo: `Ciclo: ${c.nome}`,
+      remover: () => toggle("ciclo", c.id),
     })),
     ...(periodo
       ? [
@@ -169,7 +176,7 @@ export function FiltrosAtivos({
       <button
         type="button"
         onClick={() =>
-          aplicar({ posto: null, bloco: null, mes: null, inicio: null, fim: null })
+          aplicar({ posto: null, bloco: null, mes: null, ciclo: null, inicio: null, fim: null })
         }
         className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
       >
@@ -715,6 +722,90 @@ export function BenchmarkChart({
           Realizado &lt; meta
         </span>
       </div>
+    </div>
+  );
+}
+
+// ============ COMPARATIVO DE CICLOS (clique soma o ciclo à seleção) ============
+
+export function CiclosChart({
+  dados,
+  meta,
+  ciclosSelecionados = [],
+}: {
+  dados: { cicloId: string; nome: string; score: number; visitas: number }[];
+  meta: number;
+  ciclosSelecionados?: string[];
+}) {
+  const { toggle, pendente } = useFiltrosBI();
+  const haSelecao = ciclosSelecionados.length > 0;
+
+  return (
+    <div className={dimPendente(pendente)}>
+      <ResponsiveContainer width="100%" height={Math.max(160, dados.length * 44 + 40)}>
+        <BarChart
+          data={dados}
+          layout="vertical"
+          margin={{ top: 8, right: 48, left: 8, bottom: 0 }}
+        >
+          <CartesianGrid stroke={GRID} strokeDasharray="3 3" horizontal={false} />
+          <XAxis
+            type="number"
+            domain={[0, 100]}
+            tick={{ fontSize: 12, fill: TEXTO_MUTED }}
+            axisLine={{ stroke: GRID }}
+            tickLine={false}
+          />
+          <YAxis
+            type="category"
+            dataKey="nome"
+            width={150}
+            tick={{ fontSize: 12, fill: "#334155" }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            formatter={(v) => [Number(v).toFixed(1), "Score médio"]}
+            labelFormatter={(l) => `${l} — clique para filtrar`}
+          />
+          <Bar
+            dataKey="score"
+            barSize={16}
+            radius={[0, 4, 4, 0]}
+            background={{ fill: "#f1f5f9", radius: 4 }}
+          >
+            <LabelList
+              dataKey="score"
+              position="right"
+              formatter={(v: unknown) => Number(v).toFixed(1)}
+              style={{ fontSize: 12, fill: "#334155", fontWeight: 600 }}
+            />
+            {dados.map((d) => {
+              const apagado = haSelecao && !ciclosSelecionados.includes(d.cicloId);
+              return (
+                <Cell
+                  key={d.cicloId}
+                  fill={corPorScore(d.score)}
+                  fillOpacity={apagado ? 0.3 : 1}
+                  cursor="pointer"
+                  onClick={() => toggle("ciclo", d.cicloId)}
+                />
+              );
+            })}
+          </Bar>
+          <ReferenceLine
+            x={meta}
+            stroke="#d97706"
+            strokeDasharray="5 4"
+            label={{
+              value: `meta ${meta.toFixed(0)}`,
+              position: "insideTopLeft",
+              fill: "#b45309",
+              fontSize: 11,
+            }}
+          />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }

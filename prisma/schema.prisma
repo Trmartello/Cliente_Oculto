@@ -217,6 +217,7 @@ model Visita {
   criadaPorId    String
   avaliadorNome  String? // nome exibido (avulso ou copiado do cadastro)
   avaliadorId    String? // avaliador cadastrado (opcional)
+  cicloId        String? // ciclo/campanha (opcional)
   dataAgendada   DateTime
   status         StatusVisita @default(AGENDADA)
   dataInicio     DateTime?
@@ -242,6 +243,7 @@ model Visita {
   questionario     Questionario      @relation(fields: [questionarioId], references: [id])
   criadaPor        Usuario           @relation("VisitaCriadaPor", fields: [criadaPorId], references: [id])
   avaliador        Avaliador?        @relation(fields: [avaliadorId], references: [id])
+  ciclo            Ciclo?            @relation(fields: [cicloId], references: [id])
   token            TokenAcesso?
   respostas        Resposta[]
   blocosRespostas  BlocoResposta[]
@@ -294,6 +296,19 @@ model Resposta {
   observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// Ciclo/campanha de avaliação (ex.: "2º semestre 2026") — agrupa visitas
+// para comparar rodadas no dashboard.
+model Ciclo {
+  id     String    @id @default(cuid())
+  nome   String    @unique
+  inicio DateTime?
+  fim    DateTime?
+
+  criadoEm DateTime @default(now())
+
+  visitas Visita[]
 }
 
 // Banco de avaliadores (clientes ocultos): cadastro próprio com histórico

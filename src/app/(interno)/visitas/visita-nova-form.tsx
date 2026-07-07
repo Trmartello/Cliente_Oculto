@@ -10,10 +10,12 @@ export function VisitaNovaForm({
   postos,
   questionarios,
   avaliadores = [],
+  ciclos = [],
 }: {
   postos: { id: string; nome: string }[];
   questionarios: { id: string; nome: string }[];
   avaliadores?: { id: string; nome: string }[];
+  ciclos?: { id: string; nome: string }[];
 }) {
   const [aberto, setAberto] = useState(false);
   // o modal permanece aberto exibindo o link gerado até o usuário dispensá-lo
@@ -115,6 +117,21 @@ export function VisitaNovaForm({
               </span>
               <input name="avaliadorNome" className={`mt-1 ${inputCls}`} />
             </label>
+            {ciclos.length > 0 && (
+              <label className="block text-sm sm:col-span-2">
+                <span className="font-medium text-slate-700">
+                  Ciclo de avaliação (opcional)
+                </span>
+                <select name="cicloId" className={`mt-1 ${inputCls}`}>
+                  <option value="">— sem ciclo —</option>
+                  {ciclos.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {state.erro && (
               <p className="text-sm text-red-600 sm:col-span-2">{state.erro}</p>
             )}

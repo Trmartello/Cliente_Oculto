@@ -230,6 +230,67 @@ export async function alternarAtivoAvaliador(id: string): Promise<void> {
   revalidatePath("/cadastros/avaliadores");
 }
 
+// ============ CICLOS (campanhas de avaliação) ============
+
+const cicloSchema = z.object({
+  nome: z.string().trim().min(1, "Informe o nome do ciclo"),
+  inicio: z.string().optional(),
+  fim: z.string().optional(),
+});
+
+export async function salvarCiclo(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
+  const id = (formData.get("id") as string) || null;
+  const parsed = cicloSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { erro: parsed.error.issues[0].message };
+
+  const data = {
+    nome: parsed.data.nome,
+    inicio: parsed.data.inicio ? new Date(parsed.data.inicio) : null,
+    fim: parsed.data.fim ? new Date(parsed.data.fim) : null,
+  };
+  let cicloId = id;
+  try {
+    if (id) {
+      await prisma.ciclo.update({ where: { id }, data });
+    } else {
+      cicloId = (await prisma.ciclo.create({ data })).id;
+    }
+  } catch (e: unknown) {
+    if ((e as { code?: string }).code === "P2002") {
+      return { erro: "Já existe um ciclo com este nome" };
+    }
+    throw e;
+  }
+  await registrarAuditoria(
+    sessao,
+    id ? "ciclo.editar" : "ciclo.criar",
+    "Ciclo",
+    cicloId,
+    `${id ? "Editou" : "Criou"} o ciclo "${data.nome}"`,
+  );
+  revalidatePath("/cadastros/ciclos");
+  return { ok: true };
+}
+
+export async function excluirCiclo(id: string): Promise<void> {
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
+  const visitas = await prisma.visita.count({ where: { cicloId: id } });
+  if (visitas > 0) return; // ciclo com visitas não pode ser excluído
+  const ciclo = await prisma.ciclo.delete({ where: { id } });
+  await registrarAuditoria(
+    sessao,
+    "ciclo.excluir",
+    "Ciclo",
+    id,
+    `Excluiu o ciclo "${ciclo.nome}" (sem visitas)`,
+  );
+  revalidatePath("/cadastros/ciclos");
+}
+
 // ============ METAS ============
 
 const metaSchema = z.object({

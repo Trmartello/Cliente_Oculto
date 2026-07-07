@@ -30,6 +30,7 @@ export default async function InternoLayout({
           { href: "/cadastros/avaliadores", rotulo: "Avaliadores" },
           { href: "/cadastros/usuarios", rotulo: "Usuários" },
           { href: "/cadastros/metas", rotulo: "Metas" },
+          { href: "/cadastros/ciclos", rotulo: "Ciclos" },
         ]
       : []),
     { href: "/relatorios", rotulo: "Relatórios" },

@@ -25,6 +25,7 @@ const visitaSchema = z.object({
   questionarioId: z.string().min(1, "Selecione o questionário"),
   avaliadorId: z.string().optional(),
   avaliadorNome: z.string().trim().optional(),
+  cicloId: z.string().optional(),
   dataAgendada: z.string().min(1, "Informe a data prevista"),
   validadeDias: z.coerce.number().int().min(1).max(90),
 });
@@ -42,6 +43,13 @@ export async function criarVisita(
   });
   if (!questionario || questionario.status !== "ATIVO") {
     return { erro: "Selecione um questionário ativo" };
+  }
+
+  if (parsed.data.cicloId) {
+    const ciclo = await prisma.ciclo.findUnique({
+      where: { id: parsed.data.cicloId },
+    });
+    if (!ciclo) return { erro: "Ciclo inválido" };
   }
 
   // avaliador cadastrado tem precedência sobre o nome avulso
@@ -70,6 +78,7 @@ export async function criarVisita(
       criadaPorId: sessao.usuarioId,
       avaliadorId,
       avaliadorNome,
+      cicloId: parsed.data.cicloId || null,
       dataAgendada: new Date(parsed.data.dataAgendada),
       token: {
         create: {

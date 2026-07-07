@@ -17,6 +17,8 @@ export interface FiltrosDashboard {
    * (pelos pesos do snapshot) dos scores desses blocos em cada visita.
    */
   blocosNomes?: string[];
+  /** Ciclos/campanhas selecionados (OR entre eles). */
+  ciclosIds?: string[];
 }
 
 interface ScoreBlocoSnapshot {
@@ -59,6 +61,13 @@ export interface DadosDashboard {
     posto: string;
     oportunidades: { nome: string; desempenho: number; impacto: number }[];
   }[];
+  /** Comparativo entre ciclos/campanhas (visitas com ciclo definido). */
+  comparativoCiclos: {
+    cicloId: string;
+    nome: string;
+    score: number;
+    visitas: number;
+  }[];
   /** Meta de score vigente da rede (score mínimo desejável), se cadastrada. */
   metaScore: number | null;
 }
@@ -79,6 +88,7 @@ export async function carregarDashboard(
   const postoIds = filtros.postoIds ?? [];
   const meses = filtros.meses ?? [];
   const blocosNomes = filtros.blocosNomes ?? [];
+  const ciclosIds = filtros.ciclosIds ?? [];
 
   // Busca sem os filtros de posto/mês (aplicados em memória): assim cada
   // gráfico de ORIGEM continua mostrando todos os seus itens — o ranking
@@ -97,10 +107,11 @@ export async function carregarDashboard(
       : {}),
   };
 
-  // Versão completa (posto + mês) para as agregações feitas no banco.
+  // Versão completa (posto + mês + ciclo) para as agregações no banco.
   const whereVisitaCompleto: Prisma.VisitaWhereInput = {
     ...wherePeriodo,
     ...(postoIds.length ? { postoId: { in: postoIds } } : {}),
+    ...(ciclosIds.length ? { cicloId: { in: ciclosIds } } : {}),
     ...(meses.length
       ? {
           AND: [
@@ -128,15 +139,23 @@ export async function carregarDashboard(
   const [visitasTodas, ncsAbertas, criticidadeGroups, metaVigente] = await Promise.all([
     prisma.visita.findMany({
       where: wherePeriodo,
-      include: { posto: { select: { id: true, nome: true } } },
+      include: {
+        posto: { select: { id: true, nome: true } },
+        ciclo: { select: { id: true, nome: true } },
+      },
       orderBy: { dataEnvio: "asc" },
     }),
     prisma.naoConformidade.count({
       where: {
         ...escopoNC(sessao),
         status: { in: ["ABERTA", "EM_ANDAMENTO"] },
-        ...(postoIds.length
-          ? { visita: { postoId: { in: postoIds } } }
+        ...(postoIds.length || ciclosIds.length
+          ? {
+              visita: {
+                ...(postoIds.length ? { postoId: { in: postoIds } } : {}),
+                ...(ciclosIds.length ? { cicloId: { in: ciclosIds } } : {}),
+              },
+            }
           : {}),
         ...filtroBlocoPergunta,
       },
@@ -170,9 +189,11 @@ export async function carregarDashboard(
   const noMes = (v: (typeof visitasTodas)[number]) =>
     meses.length === 0 ||
     (v.dataEnvio !== null && meses.includes(chaveMes(new Date(v.dataEnvio))));
+  const noCiclo = (v: (typeof visitasTodas)[number]) =>
+    ciclosIds.length === 0 || (v.cicloId !== null && ciclosIds.includes(v.cicloId));
 
   // Painel (cards, blocos, matriz, oportunidades): todos os filtros.
-  const visitas = visitasTodas.filter((v) => noPosto(v) && noMes(v));
+  const visitas = visitasTodas.filter((v) => noPosto(v) && noMes(v) && noCiclo(v));
 
   // Score de referência da visita: o final ou, no cross-filter por bloco,
   // a média dos blocos selecionados ponderada pelos pesos do snapshot
@@ -204,7 +225,7 @@ export async function carregarDashboard(
     string,
     { nome: string; scores: number[]; falhas: number }
   >();
-  for (const v of visitasTodas.filter(noMes)) {
+  for (const v of visitasTodas.filter((x) => noMes(x) && noCiclo(x))) {
     const atual = porPosto.get(v.posto.id) ?? {
       nome: v.posto.nome,
       scores: [],
@@ -228,7 +249,7 @@ export async function carregarDashboard(
   // ---- Evolução mensal ----
   // Idem: não se filtra pelos próprios meses selecionados.
   const porMes = new Map<string, number[]>();
-  for (const v of visitasTodas.filter(noPosto)) {
+  for (const v of visitasTodas.filter((x) => noPosto(x) && noCiclo(x))) {
     const s = scoreDe(v);
     if (s === null || !v.dataEnvio) continue;
     const chave = chaveMes(new Date(v.dataEnvio));
@@ -337,6 +358,23 @@ export async function carregarDashboard(
     .filter((p) => p.oportunidades.length > 0)
     .sort((a, b) => a.posto.localeCompare(b.posto));
 
+  // ---- Comparativo entre ciclos (não se filtra pelos próprios ciclos) ----
+  const porCiclo = new Map<string, { nome: string; scores: number[] }>();
+  for (const v of visitasTodas.filter((x) => noPosto(x) && noMes(x))) {
+    if (!v.ciclo) continue;
+    const s = scoreDe(v);
+    if (s === null) continue;
+    const atual = porCiclo.get(v.ciclo.id) ?? { nome: v.ciclo.nome, scores: [] };
+    atual.scores.push(s);
+    porCiclo.set(v.ciclo.id, atual);
+  }
+  const comparativoCiclos = [...porCiclo.entries()].map(([cicloId, d]) => ({
+    cicloId,
+    nome: d.nome,
+    score: media(d.scores) ?? 0,
+    visitas: d.scores.length,
+  }));
+
   return {
     totalVisitas: visitas.length,
     scoreMedio: media(scores),
@@ -348,6 +386,7 @@ export async function carregarDashboard(
     conformidadePorCriticidade,
     matriz,
     oportunidadesPorPosto,
+    comparativoCiclos,
     metaScore: metaVigente ? Number(metaVigente.scoreMinimo) : null,
   };
 }
