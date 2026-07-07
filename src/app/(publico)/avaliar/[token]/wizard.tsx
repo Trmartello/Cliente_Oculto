@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import {
   enviarAvaliacao,
+  salvarLegendaEvidencia,
   salvarRascunho,
   type RespostaRascunho,
 } from "@/actions/avaliacao";
@@ -26,6 +27,9 @@ type RespostaLocal = {
   naoSeAplica: boolean;
   comentario: string | null;
 };
+
+/** Foto enviada + sua legenda (comentário da foto). */
+type FotoLocal = { id: string; legenda: string | null };
 
 // Recomprime a foto no aparelho antes do upload (essencial em 4G).
 async function comprimirImagem(arquivo: File): Promise<Blob> {
@@ -131,13 +135,15 @@ function Estrelas({
 function FotoUpload({
   token,
   perguntaId,
-  evidencias,
-  onNovaEvidencia,
+  fotos,
+  onNovaFoto,
+  onLegenda,
 }: {
   token: string;
   perguntaId: string;
-  evidencias: string[];
-  onNovaEvidencia: (id: string) => void;
+  fotos: FotoLocal[];
+  onNovaFoto: (id: string) => void;
+  onLegenda: (id: string, legenda: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [enviando, setEnviando] = useState(false);
@@ -155,7 +161,7 @@ function FotoUpload({
       const resp = await fetch("/api/upload", { method: "POST", body: fd });
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.erro ?? "Falha no envio");
-      onNovaEvidencia(json.id);
+      onNovaFoto(json.id);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha no envio da foto");
     } finally {
@@ -166,26 +172,37 @@ function FotoUpload({
 
   return (
     <div className="mt-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {evidencias.map((id) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={id}
-            src={`/api/evidencia/${id}?token=${encodeURIComponent(token)}`}
-            alt="Foto enviada"
-            className="h-16 w-16 rounded-lg border border-slate-200 object-cover"
-          />
-        ))}
-        <button
-          type="button"
-          disabled={enviando}
-          onClick={() => inputRef.current?.click()}
-          className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 text-2xl text-slate-400 active:bg-slate-100 disabled:opacity-50"
-          aria-label="Adicionar foto"
-        >
-          {enviando ? "…" : "📷"}
-        </button>
-      </div>
+      {/* Cada foto com um campo de legenda/comentário logo abaixo */}
+      {fotos.length > 0 && (
+        <ul className="mb-2 space-y-2">
+          {fotos.map((f) => (
+            <li key={f.id} className="flex items-start gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/evidencia/${f.id}?token=${encodeURIComponent(token)}`}
+                alt="Foto enviada"
+                className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 object-cover"
+              />
+              <input
+                type="text"
+                defaultValue={f.legenda ?? ""}
+                onBlur={(e) => onLegenda(f.id, e.target.value)}
+                placeholder="Comentário desta foto (opcional)"
+                className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        type="button"
+        disabled={enviando}
+        onClick={() => inputRef.current?.click()}
+        className="flex min-h-11 items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 text-sm font-medium text-slate-600 active:bg-slate-100 disabled:opacity-50"
+        aria-label="Adicionar foto"
+      >
+        {enviando ? "Enviando foto…" : "📷 Adicionar foto"}
+      </button>
       {erro && <p className="mt-1 text-xs text-red-600">{erro}</p>}
       <input
         ref={inputRef}
@@ -202,24 +219,45 @@ function FotoUpload({
   );
 }
 
-// Área expansível de comentário + fotos exibida sob cada item avaliado.
+/** Campo de comentário do item (independe de foto — pode ir sozinho). */
+function ComentarioItem({
+  comentario,
+  onComentario,
+}: {
+  comentario: string | null;
+  onComentario: (texto: string) => void;
+}) {
+  return (
+    <textarea
+      value={comentario ?? ""}
+      onChange={(e) => onComentario(e.target.value)}
+      rows={2}
+      placeholder="Comentário (opcional)"
+      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+    />
+  );
+}
+
+// Área expansível: comentário do item + fotos (cada foto com sua legenda).
 function ComentarioFoto({
   token,
   perguntaId,
   comentario,
-  evidencias,
+  fotos,
   onComentario,
-  onNovaEvidencia,
+  onNovaFoto,
+  onLegenda,
 }: {
   token: string;
   perguntaId: string;
   comentario: string | null;
-  evidencias: string[];
+  fotos: FotoLocal[];
   onComentario: (texto: string) => void;
-  onNovaEvidencia: (id: string) => void;
+  onNovaFoto: (id: string) => void;
+  onLegenda: (id: string, legenda: string) => void;
 }) {
   const [aberto, setAberto] = useState(
-    Boolean(comentario) || evidencias.length > 0,
+    Boolean(comentario) || fotos.length > 0,
   );
 
   if (!aberto) {
@@ -239,18 +277,15 @@ function ComentarioFoto({
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
         Comentário e fotos deste item
       </p>
-      <textarea
-        value={comentario ?? ""}
-        onChange={(e) => onComentario(e.target.value)}
-        rows={2}
-        placeholder="Comentário (opcional)"
-        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-      />
+      <div className="mt-2">
+        <ComentarioItem comentario={comentario} onComentario={onComentario} />
+      </div>
       <FotoUpload
         token={token}
         perguntaId={perguntaId}
-        evidencias={evidencias}
-        onNovaEvidencia={onNovaEvidencia}
+        fotos={fotos}
+        onNovaFoto={onNovaFoto}
+        onLegenda={onLegenda}
       />
     </div>
   );
@@ -267,13 +302,15 @@ export function AvaliacaoWizard({
   posto: string;
   blocos: BlocoW[];
   respostasIniciais: Record<string, RespostaLocal>;
-  evidenciasIniciais: Record<string, string[]>;
+  evidenciasIniciais: Record<string, FotoLocal[]>;
 }) {
   const [passo, setPasso] = useState(0); // blocos.length = revisão
   const [respostas, setRespostas] = useState<Record<string, RespostaLocal>>(
     respostasIniciais,
   );
-  const [evidencias, setEvidencias] = useState(evidenciasIniciais);
+  const [fotos, setFotos] = useState<Record<string, FotoLocal[]>>(
+    evidenciasIniciais,
+  );
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, startTransition] = useTransition();
 
@@ -287,6 +324,10 @@ export function AvaliacaoWizard({
     );
   }
 
+  function fotosDe(perguntaId: string): FotoLocal[] {
+    return fotos[perguntaId] ?? [];
+  }
+
   function atualizar(perguntaId: string, mudanca: Partial<RespostaLocal>) {
     setRespostas((atual) => ({
       ...atual,
@@ -295,10 +336,28 @@ export function AvaliacaoWizard({
     setErro(null);
   }
 
+  function adicionarFoto(perguntaId: string, id: string) {
+    setFotos((atual) => ({
+      ...atual,
+      [perguntaId]: [...(atual[perguntaId] ?? []), { id, legenda: null }],
+    }));
+  }
+
+  function definirLegenda(perguntaId: string, id: string, legenda: string) {
+    setFotos((atual) => ({
+      ...atual,
+      [perguntaId]: (atual[perguntaId] ?? []).map((f) =>
+        f.id === id ? { ...f, legenda } : f,
+      ),
+    }));
+    // persiste sem bloquear a UI
+    void salvarLegendaEvidencia(token, id, legenda);
+  }
+
   function pendentesDo(b: BlocoW): PerguntaW[] {
     return b.perguntas.filter((p) => {
       if (!p.obrigatoria || p.tipo === "TEXTO") return false;
-      if (p.tipo === "FOTO") return !(evidencias[p.id]?.length > 0);
+      if (p.tipo === "FOTO") return fotosDe(p.id).length === 0;
       const r = respostaDe(p.id);
       return !r.naoSeAplica && (r.valor === null || r.valor === "");
     });
@@ -472,17 +531,26 @@ export function AvaliacaoWizard({
                       />
                     )}
                     {p.tipo === "FOTO" && (
-                      <FotoUpload
-                        token={token}
-                        perguntaId={p.id}
-                        evidencias={evidencias[p.id] ?? []}
-                        onNovaEvidencia={(id) =>
-                          setEvidencias((e) => ({
-                            ...e,
-                            [p.id]: [...(e[p.id] ?? []), id],
-                          }))
-                        }
-                      />
+                      <div>
+                        <FotoUpload
+                          token={token}
+                          perguntaId={p.id}
+                          fotos={fotosDe(p.id)}
+                          onNovaFoto={(id) => adicionarFoto(p.id, id)}
+                          onLegenda={(id, legenda) =>
+                            definirLegenda(p.id, id, legenda)
+                          }
+                        />
+                        {/* comentário avulso do item, mesmo em pergunta de foto */}
+                        <div className="mt-3">
+                          <ComentarioItem
+                            comentario={r.comentario}
+                            onComentario={(texto) =>
+                              atualizar(p.id, { comentario: texto })
+                            }
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -509,15 +577,13 @@ export function AvaliacaoWizard({
                     token={token}
                     perguntaId={p.id}
                     comentario={r.comentario}
-                    evidencias={evidencias[p.id] ?? []}
+                    fotos={fotosDe(p.id)}
                     onComentario={(texto) =>
                       atualizar(p.id, { comentario: texto })
                     }
-                    onNovaEvidencia={(id) =>
-                      setEvidencias((e) => ({
-                        ...e,
-                        [p.id]: [...(e[p.id] ?? []), id],
-                      }))
+                    onNovaFoto={(id) => adicionarFoto(p.id, id)}
+                    onLegenda={(id, legenda) =>
+                      definirLegenda(p.id, id, legenda)
                     }
                   />
                 )}
@@ -541,7 +607,7 @@ export function AvaliacaoWizard({
               return (
                 r.naoSeAplica ||
                 (r.valor !== null && r.valor !== "") ||
-                (p.tipo === "FOTO" && evidencias[p.id]?.length > 0)
+                (p.tipo === "FOTO" && fotosDe(p.id).length > 0)
               );
             }).length;
             return (

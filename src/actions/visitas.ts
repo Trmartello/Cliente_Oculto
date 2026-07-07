@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { exigirPapel } from "@/lib/auth";
 import {
@@ -13,7 +14,7 @@ import {
 export interface VisitaState {
   erro?: string;
   ok?: boolean;
-  /** Link completo do avaliador — exibido UMA única vez após a geração. */
+  /** Link completo do avaliador — exibido após a geração/redefinição. */
   link?: string;
   visitaId?: string;
 }
@@ -54,7 +55,11 @@ export async function criarVisita(
       avaliadorNome: parsed.data.avaliadorNome || null,
       dataAgendada: new Date(parsed.data.dataAgendada),
       token: {
-        create: { tokenHash: hashToken(tokenBruto), expiraEm },
+        create: {
+          tokenHash: hashToken(tokenBruto),
+          tokenPlano: tokenBruto, // guardado enquanto ATIVO, p/ reenvio
+          expiraEm,
+        },
       },
     },
   });
@@ -99,12 +104,18 @@ export async function gerarNovoLink(
       where: { visitaId },
       update: {
         tokenHash: hashToken(tokenBruto),
+        tokenPlano: tokenBruto,
         expiraEm,
         status: "ATIVO",
         primeiroAcessoEm: null,
         usadoEm: null,
       },
-      create: { visitaId, tokenHash: hashToken(tokenBruto), expiraEm },
+      create: {
+        visitaId,
+        tokenHash: hashToken(tokenBruto),
+        tokenPlano: tokenBruto,
+        expiraEm,
+      },
     }),
     prisma.visita.update({
       where: { id: visitaId },
@@ -114,16 +125,78 @@ export async function gerarNovoLink(
     }),
   ]);
 
+  revalidatePath("/visitas");
   revalidatePath(`/visitas/${visitaId}`);
   return { ok: true, visitaId, link: await montarLinkAvaliacao(tokenBruto) };
+}
+
+/**
+ * Redefine a data prevista da visita (e, opcionalmente, estende a validade
+ * do link ATIVO). NÃO gera novo token — o mesmo link segue válido e pode ser
+ * recompartilhado. Usado para reagendar uma avaliação já criada.
+ */
+export async function redefinirDataVisita(
+  _prev: VisitaState,
+  formData: FormData,
+): Promise<VisitaState> {
+  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const visitaId = formData.get("visitaId") as string;
+  const dataAgendada = formData.get("dataAgendada") as string;
+  const validadeDiasRaw = formData.get("validadeDias");
+
+  if (!dataAgendada) return { erro: "Informe a nova data prevista" };
+
+  const visita = await prisma.visita.findUnique({
+    where: { id: visitaId },
+    include: { token: true },
+  });
+  if (!visita) return { erro: "Visita não encontrada" };
+  if (visita.status === "ENVIADA" || visita.status === "CANCELADA") {
+    return { erro: "Esta visita não pode ser reagendada" };
+  }
+
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.visita.update({
+      where: { id: visitaId },
+      data: { dataAgendada: new Date(dataAgendada) },
+    }),
+  ];
+
+  // Estender a validade do link ativo é opcional (útil quando a nova data
+  // ultrapassa a validade atual).
+  const dias = Number(validadeDiasRaw);
+  if (
+    validadeDiasRaw &&
+    Number.isFinite(dias) &&
+    dias >= 1 &&
+    visita.token?.status === "ATIVO"
+  ) {
+    const validade = Math.min(Math.max(dias, 1), 90);
+    ops.push(
+      prisma.tokenAcesso.update({
+        where: { visitaId },
+        data: {
+          expiraEm: new Date(Date.now() + validade * 24 * 60 * 60 * 1000),
+        },
+      }),
+    );
+  }
+
+  await prisma.$transaction(ops);
+
+  revalidatePath("/visitas");
+  revalidatePath(`/visitas/${visitaId}`);
+  return { ok: true, visitaId };
 }
 
 export async function revogarLink(visitaId: string): Promise<void> {
   await exigirPapel("ADMIN", "CONTROLADORIA");
   await prisma.tokenAcesso.updateMany({
     where: { visitaId, status: "ATIVO" },
-    data: { status: "REVOGADO" },
+    // zera o token cru: link não pode mais ser recuperado
+    data: { status: "REVOGADO", tokenPlano: null },
   });
+  revalidatePath("/visitas");
   revalidatePath(`/visitas/${visitaId}`);
 }
 
@@ -140,7 +213,7 @@ export async function cancelarVisita(visitaId: string): Promise<void> {
     }),
     prisma.tokenAcesso.updateMany({
       where: { visitaId, status: "ATIVO" },
-      data: { status: "REVOGADO" },
+      data: { status: "REVOGADO", tokenPlano: null },
     }),
   ]);
   revalidatePath("/visitas");

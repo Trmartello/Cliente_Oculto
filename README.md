@@ -8,10 +8,13 @@ combustíveis, baseado em avaliações de **Cliente Oculto** com metodologia de
 
 - A **Controladoria** cadastra postos, questionários (blocos, perguntas,
   pesos, criticidade) e metas — tudo pelo painel, sem alterar código.
-- Para cada visita é gerado um **link com validade pré-definida**. O
-  avaliador (cliente oculto) abre o link **no celular**, responde o
-  questionário bloco a bloco, anexa fotos e envia. Depois do envio ou do
-  vencimento, o link deixa de funcionar.
+- Para cada visita é gerado um **link com validade pré-definida**, que pode ser
+  **compartilhado no WhatsApp** ou copiado — na geração, na lista de visitas e no
+  detalhe (enquanto o link estiver ativo). O avaliador (cliente oculto) abre o
+  link **no celular**, responde o questionário bloco a bloco por **estrelas
+  (1–5)**, deixa comentários por item e **por foto**, anexa evidências e envia. A
+  visita pode ser **reagendada** (redefinir data, estender validade) sem trocar o
+  link. Depois do envio ou do vencimento, o link deixa de funcionar.
 - No envio, o **motor de score** calcula a nota ponderada (0–100), a faixa
   **IGEO** (Excelência / Muito Bom / Bom / Regular / Crítico) e a matriz
   Importância × Desempenho. Os resultados são gravados como **snapshot
@@ -19,10 +22,12 @@ combustíveis, baseado em avaliações de **Cliente Oculto** com metodologia de
 - **Falha crítica** (ex.: não confirmou o combustível) aplica penalidade
   parametrizável (teto/percentual) e abre **Não Conformidade** automática com
   plano de ação; score abaixo da **meta** também gera NC.
-- O **dashboard executivo** traz score geral, ranking de postos, evolução
-  mensal, score por bloco, conformidade por criticidade, matriz de
-  prioridades estratégicas e as três maiores oportunidades de melhoria por
-  posto. Relatórios exportam em CSV (Excel pt-BR).
+- O **dashboard executivo** funciona como um **BI**: clicar em barras, pontos,
+  linhas ou blocos aplica aquele valor como filtro para todo o painel, com
+  **seleção múltipla** (vários postos, blocos e meses ao mesmo tempo) e estado
+  compartilhável pela URL. Traz score geral, ranking de postos, evolução mensal,
+  score por bloco, conformidade por criticidade, matriz de prioridades e as três
+  maiores oportunidades por posto. Relatórios exportam em CSV (Excel pt-BR).
 
 ### Perfis de acesso
 
@@ -85,8 +90,12 @@ npm test
    `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
    (Cloudflare R2, Backblaze B2 ou MinIO — o filesystem do Railway é efêmero,
    não use `local` em produção).
-3. Pre-deploy command: `npx prisma migrate deploy`. Build/start padrão do
-   Next.js (`npm run build` / `npm run start`).
+3. Pre-deploy command: `npx prisma migrate deploy && npx tsx prisma/questionario-oficial.ts`
+   (o segundo comando cria o questionário oficial da rede e é idempotente —
+   pode ficar fixo). Build/start padrão do Next.js (`npm run build` /
+   `npm run start`).
+4. O Railway publica a **branch** definida em *Settings → Source*. Aponte-a
+   para a branch com o código mais recente antes de fazer deploy.
 
 ### Link do avaliador (celular) — como a URL é montada
 

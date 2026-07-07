@@ -1,0 +1,163 @@
+# CLAUDE.md — Cliente Oculto (rede de postos)
+
+Guia para agentes trabalharem neste repositório. Leia antes de editar.
+
+## O que é
+
+Sistema web de **Cliente Oculto** para redes de postos de combustíveis.
+Avaliadores anônimos preenchem, **pelo celular**, um questionário com pesos e
+criticidades parametrizáveis; o **motor de score** gera nota ponderada (0–100),
+faixa **IGEO** e matriz Importância × Desempenho, tudo gravado como **snapshot
+imutável**. A Controladoria analisa no **dashboard executivo** (desktop, estilo
+BI com cross-filter). Falhas críticas e score abaixo da meta abrem **Não
+Conformidade** automática com plano de ação.
+
+- **Mobile** = coleta (`/avaliar/[token]`). **Desktop** = análise/gráficos.
+- Idioma do produto e da comunicação com o usuário: **pt-BR**.
+
+## Stack
+
+Next.js **16.2.10** (App Router, Turbopack) · React **19.2.4** · TypeScript ·
+Tailwind **v4** (via `@tailwindcss/postcss`, **sem** `tailwind.config`) · Prisma
+**6.19** + **MySQL/MariaDB** · Recharts **3.9** · jose (JWT) · bcryptjs · zod
+**v4** · `@aws-sdk/client-s3` · qrcode. Testes: **vitest v4**.
+
+Domínio puro (motor de score) em `src/domain/` — sem framework, coberto por
+testes.
+
+## Comandos
+
+```bash
+npm run dev            # next dev (localhost:3000)
+npm run build          # next build (roda typecheck — use para validar tipos)
+npm test               # vitest run (26 testes do motor de score)
+npm run db:migrate     # prisma migrate dev   (DEV: cria migração + aplica)
+npm run db:deploy      # prisma migrate deploy (PROD/CI: só aplica)
+npm run db:seed        # prisma db seed (usa tsx; dados demo)
+npx tsx prisma/questionario-oficial.ts   # cria "Avaliação Oficial da Rede" (idempotente)
+```
+
+Não há script de `typecheck` isolado — use `npm run build`. Não há `lint`
+específico do Next além de `eslint` (flat config em `eslint.config.mjs`).
+
+## Arquitetura (mapa de arquivos)
+
+```
+prisma/schema.prisma          modelos + enums (MySQL)
+prisma/seed.ts                usuários demo (senha123), postos, questionário demo, visitas
+prisma/questionario-oficial.ts  roteiro oficial da rede (idempotente por nome)
+src/domain/score/             motor puro: engine.ts, igeo.ts, tipos.ts + *.test.ts
+src/lib/
+  prisma.ts        singleton PrismaClient
+  auth.ts          sessão JWT (jose) em cookie; exigirSessao/exigirPapel; "server-only"
+  rbac.ts          papéis + escopoVisita/escopoNC/escopoPosto (NÃO é server-only; ok no client)
+  token-avaliacao.ts  gera/valida token; baseUrlPublica() monta o link público; "server-only"
+  storage/         driver local (dev) ou s3 (prod); "server-only"
+  dashboard.ts     carregarDashboard() — agrega snapshots com RBAC; "server-only"
+  csv.ts / formato.ts  exportação CSV (Excel pt-BR) e rótulos/cores
+src/actions/       server actions: auth, cadastros, questionarios, visitas, avaliacao, ncs
+src/app/(publico)/ login e fluxo mobile /avaliar/[token] (wizard) + /avaliar/enviado
+src/app/(interno)/ dashboard, visitas, nao-conformidades, cadastros/*, relatorios
+src/app/api/       upload e leitura de evidências, exportações CSV
+src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
+```
+
+## Regras de negócio que NÃO se quebram
+
+- **Snapshot imutável**: no envio, cada `Resposta` e a `Visita` congelam
+  `notaObtida`, pesos, `criticidadeSnapshot`, `scoreItem`, `scoreFinal`,
+  `scoresPorBloco` (JSON), `matrizJson`. Mudar pesos depois **não** reescreve o
+  histórico. Um questionário com visitas enviadas é **imutável** → nova versão.
+- **Motor de score** (`src/domain/score/engine.ts`, testado): nota ponderada por
+  pergunta dentro do bloco, blocos ponderados entre si; **falha crítica** quando
+  razão da nota ≤ 0,4 numa pergunta CRITICA → penalidade `TETO`/`PERCENTUAL` e NC
+  automática. Faixas IGEO por limites numéricos em `igeo.ts`. Não altere sem
+  rodar `npm test`.
+- **RBAC**: `escopoVisita/escopoNC/escopoPosto(sessao)` entram **na frente de toda
+  query** de dados. ADMIN/CONTROLADORIA veem tudo; GESTOR_REGIONAL só a região;
+  GERENTE só o posto; CONSULTA só leitura. Nunca remova o escopo de uma query.
+- **Token do avaliador**: guardado como **hash sha256**. `validarToken` decide na
+  ordem USADO → REVOGADO → EXPIRADO; expiração é **lazy** (persistida só no
+  acesso, sem cron — é por design).
+- **Link público** (`baseUrlPublica()` em `token-avaliacao.ts`): resolve na ordem
+  (1) `APP_URL` se **não** for localhost; (2) `x-forwarded-proto/host` (proxy do
+  Railway) ou `Host`; (3) fallback dev. **Por isso o link funciona em produção
+  sem `APP_URL`.** Nunca volte a montar link com valor fixo/localhost.
+- **`TokenAcesso.tokenPlano`**: token cru guardado **apenas enquanto ATIVO**, para
+  permitir reenvio (WhatsApp/copiar). É **zerado** ao usar/revogar/expirar
+  (`enviarAvaliacao`, `revogarLink`, `cancelarVisita`, `validarToken`). Não exiba
+  nem persista o token cru fora desse estado.
+
+## Dashboard BI (cross-filter, seleção MÚLTIPLA)
+
+- Estado vive na URL como **parâmetros repetidos**: `?posto=a&posto=b&bloco=X&bloco=Y&mes=2026-06`.
+  OR dentro da dimensão, AND entre dimensões. Vira link compartilhável.
+- Clique num elemento (barra do ranking, ponto do mês, ponto da matriz, linha da
+  tabela de blocos, card de oportunidade) **soma** o valor à seleção; clicar de
+  novo remove (`toggle` em `charts.tsx` via `useFiltrosBI`). Um **chip por valor**
+  em `FiltrosAtivos`.
+- `carregarDashboard` (`dashboard.ts`) recebe `postoIds[]`, `blocosNomes[]`,
+  `meses[]`, `inicio/fim`. Gráficos-**origem** de um filtro não se filtram por si
+  (o ranking mostra todos os postos, esmaecendo os não selecionados; idem meses).
+  Com blocos selecionados, o score de cada visita vira a **média ponderada** (por
+  peso do snapshot) dos blocos escolhidos. Cross-filter por bloco casa por
+  **nome** no JSON do snapshot — renomear um Bloco quebra o match de visitas
+  antigas.
+
+## Wizard de avaliação (mobile)
+
+- `src/app/(publico)/avaliar/[token]/wizard.tsx`. Autosave por etapa
+  (`salvarRascunho`). Perguntas `NOTA_1_5` = **estrelas**; comentário do item
+  independe de foto (comentário avulso funciona sozinho). Cada foto tem
+  **legenda** própria (`Evidencia.legenda`), salva em blur via
+  `salvarLegendaEvidencia` (confere posse pelo token). Fotos são recomprimidas no
+  aparelho e enviadas a `/api/upload`.
+
+## Reenvio de link e reagendamento
+
+- `CompartilharLink` (client) = botões **WhatsApp** (`wa.me/?text=`) + **Copiar**;
+  `mensagemConvite()` fica em `convite.ts` (módulo comum, **não** client — pode
+  ser chamado no servidor). Aparece na geração, na lista de visitas e no detalhe,
+  para links **ATIVO** (reconstruídos de `tokenPlano`).
+- `redefinirDataVisita` (action) reagenda a visita (nova `dataAgendada`) e pode
+  estender a validade do link ativo — **sem** gerar novo token.
+
+## Deploy (Railway)
+
+- Serviço a partir do repo + addon MySQL; `DATABASE_URL` = reference variable do
+  banco. `AUTH_SECRET` obrigatório (`openssl rand -hex 32`) — **runtime lança erro
+  se ausente**. `APP_URL` opcional (ver link público acima). Fotos: use
+  `STORAGE_DRIVER=s3` (filesystem do Railway é **efêmero**; `local` perde uploads
+  a cada deploy).
+- Pre-deploy: `npx prisma migrate deploy && npx tsx prisma/questionario-oficial.ts`
+  (idempotente; pode ficar fixo). `next.config.ts` usa `output: "standalone"` e
+  `serverExternalPackages: ["@prisma/client","bcryptjs"]` — não remova.
+- **O Railway publica a branch configurada em Settings → Source.** Trabalho novo
+  vive em `claude/new-project-dev-qhzsja`; se o serviço apontar para `main` sem o
+  merge, o deploy roda código antigo / falha no pre-deploy.
+
+## Convenções de trabalho neste repo
+
+- **Branch**: desenvolva e faça push **só** em `claude/new-project-dev-qhzsja`.
+  Não crie PR sem o usuário pedir.
+- **Commits**: autor `Claude <noreply@anthropic.com>` (o Stop hook exige). Não
+  inclua o identificador do modelo em nada versionado.
+- **`"server-only"`**: `auth.ts`, `token-avaliacao.ts`, `dashboard.ts`, `csv.ts`,
+  `storage/index.ts` importam `server-only` — importá-los num componente client
+  quebra o build. `rbac.ts` e `formato.ts` podem ir ao client.
+- **CSV** (`csv.ts`): separador `;`, `\r\n` e **BOM UTF-8** de propósito (Excel
+  pt-BR). Não “limpe” o BOM.
+- **Datas**: `formatarData` força `timeZone: "UTC"` (datas puras não retrocedem no
+  fuso); `formatarDataHora` não força. Não uniformize.
+
+## Ambiente de desenvolvimento (container)
+
+- **MariaDB** cai entre sessões: reinicie com
+  `(mysqld_safe --skip-syslog &)` e aguarde `mysqladmin -uoculto -poculto_dev ping`.
+  Credenciais dev: `oculto` / `oculto_dev`, banco `cliente_oculto`.
+- **Playwright**: `NODE_PATH=/opt/node22/lib/node_modules`, chromium em
+  `/opt/pw-browsers/chromium` (não rode `playwright install`).
+- **Prisma AI-guard** bloqueia `migrate reset`. Para recriar o banco **local**
+  (nunca em produção): `mysql -uoculto -poculto_dev -e "DROP DATABASE ...; CREATE
+  DATABASE cliente_oculto ..."` + `migrate deploy` + `db seed`.
+- O proxy de egress bloqueia `railway.app`.

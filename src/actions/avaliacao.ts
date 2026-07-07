@@ -55,6 +55,33 @@ export async function salvarRascunho(
   return { ok: true };
 }
 
+/**
+ * Salva a legenda/comentário de uma foto específica (chamado pelo wizard ao
+ * sair do campo). Confere que a evidência pertence à visita do token.
+ */
+export async function salvarLegendaEvidencia(
+  token: string,
+  evidenciaId: string,
+  legenda: string,
+): Promise<AvaliacaoState> {
+  const validacao = await validarToken(token);
+  if (!validacao.ok) return { erro: "Link inválido ou expirado" };
+
+  const evidencia = await prisma.evidencia.findUnique({
+    where: { id: evidenciaId },
+    select: { id: true, resposta: { select: { visitaId: true } } },
+  });
+  if (!evidencia || evidencia.resposta?.visitaId !== validacao.visitaId) {
+    return { erro: "Foto não encontrada" };
+  }
+
+  await prisma.evidencia.update({
+    where: { id: evidenciaId },
+    data: { legenda: legenda.trim() || null },
+  });
+  return { ok: true };
+}
+
 /** Meta de score geral aplicável ao posto na data (posto > rede). */
 async function metaAplicavel(postoId: string): Promise<number | null> {
   const agora = new Date();
@@ -217,7 +244,8 @@ export async function enviarAvaliacao(
 
     await tx.tokenAcesso.update({
       where: { id: validacao.tokenId },
-      data: { status: "USADO", usadoEm: agora },
+      // zera o token cru: concluída a avaliação, o link não é mais recuperável
+      data: { status: "USADO", usadoEm: agora, tokenPlano: null },
     });
   });
 

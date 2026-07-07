@@ -4,6 +4,7 @@ import { exigirSessao } from "@/lib/auth";
 import { podeAdministrar, escopoVisita } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { cancelarVisita, revogarLink } from "@/actions/visitas";
+import { baseUrlPublica } from "@/lib/token-avaliacao";
 import { Badge, Card, PageHeader, btnPerigo } from "@/components/ui";
 import {
   COR_CRITICIDADE,
@@ -22,6 +23,9 @@ import {
   formatarScore,
 } from "@/lib/formato";
 import { NovoLinkForm } from "./novo-link-form";
+import { EditarVisitaForm } from "./editar-visita-form";
+import { CompartilharLink } from "../compartilhar-link";
+import { mensagemConvite } from "../convite";
 
 export const metadata = { title: "Visita — Cliente Oculto" };
 
@@ -113,6 +117,15 @@ export default async function VisitaDetalhePage({
 
   const linkGerenciavel =
     admin && visita.status !== "ENVIADA" && visita.status !== "CANCELADA";
+
+  // Link ativo reconstruído (para reenvio via WhatsApp/copiar).
+  const linkAtivo =
+    visita.token?.status === "ATIVO" && visita.token.tokenPlano
+      ? `${await baseUrlPublica()}/avaliar/${visita.token.tokenPlano}`
+      : null;
+  const dataAgendadaInput = visita.dataAgendada
+    .toISOString()
+    .slice(0, 10);
 
   return (
     <div>
@@ -212,9 +225,34 @@ export default async function VisitaDetalhePage({
               ? visita.token.status === "ATIVO"
                 ? `Link ativo, válido até ${formatarDataHora(visita.token.expiraEm)}.`
                 : `Link ${visita.token.status === "USADO" ? "já utilizado" : visita.token.status === "EXPIRADO" ? "expirado" : "revogado"}.`
-              : "Nenhum link gerado."}{" "}
-            O endereço completo só é exibido no momento da geração.
+              : "Nenhum link gerado."}
           </p>
+
+          {/* Reenvio do link ativo */}
+          {linkAtivo && (
+            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                Reenviar ao avaliador
+              </p>
+              <code className="mb-2 block max-w-full break-all rounded-lg bg-white px-3 py-2 text-xs text-slate-800">
+                {linkAtivo}
+              </code>
+              <CompartilharLink
+                link={linkAtivo}
+                mensagem={mensagemConvite(visita.posto.nome, linkAtivo)}
+              />
+            </div>
+          )}
+
+          {/* Reagendar (redefinir data) */}
+          <div className="mb-4">
+            <EditarVisitaForm
+              visitaId={visita.id}
+              dataAtual={dataAgendadaInput}
+              linkAtivo={visita.token?.status === "ATIVO"}
+            />
+          </div>
+
           <div className="flex flex-wrap items-start gap-3">
             <NovoLinkForm visitaId={visita.id} />
             {visita.token?.status === "ATIVO" && (
@@ -300,15 +338,21 @@ export default async function VisitaDetalhePage({
                             </p>
                           )}
                           {r && r.evidencias.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
+                            <div className="mt-2 flex flex-wrap gap-3">
                               {r.evidencias.map((e) => (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  key={e.id}
-                                  src={`/api/evidencia/${e.id}`}
-                                  alt="Evidência fotográfica"
-                                  className="h-24 w-24 rounded-lg border border-slate-200 object-cover"
-                                />
+                                <figure key={e.id} className="w-24">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={`/api/evidencia/${e.id}`}
+                                    alt={e.legenda ?? "Evidência fotográfica"}
+                                    className="h-24 w-24 rounded-lg border border-slate-200 object-cover"
+                                  />
+                                  {e.legenda && (
+                                    <figcaption className="mt-1 text-xs text-slate-500">
+                                      {e.legenda}
+                                    </figcaption>
+                                  )}
+                                </figure>
                               ))}
                             </div>
                           )}

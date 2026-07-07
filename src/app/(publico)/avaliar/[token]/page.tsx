@@ -55,7 +55,9 @@ export default async function AvaliarPage({
           },
         },
       },
-      respostas: { include: { evidencias: { select: { id: true } } } },
+      respostas: {
+        include: { evidencias: { select: { id: true, legenda: true } } },
+      },
     },
   });
 
@@ -63,7 +65,10 @@ export default async function AvaliarPage({
     string,
     { valor: string | null; naoSeAplica: boolean; comentario: string | null }
   > = {};
-  const evidenciasIniciais: Record<string, string[]> = {};
+  const evidenciasIniciais: Record<
+    string,
+    { id: string; legenda: string | null }[]
+  > = {};
   for (const r of visita.respostas) {
     respostasIniciais[r.perguntaId] = {
       valor: r.valor,
@@ -71,7 +76,10 @@ export default async function AvaliarPage({
       comentario: r.comentario,
     };
     if (r.evidencias.length > 0) {
-      evidenciasIniciais[r.perguntaId] = r.evidencias.map((e) => e.id);
+      evidenciasIniciais[r.perguntaId] = r.evidencias.map((e) => ({
+        id: e.id,
+        legenda: e.legenda,
+      }));
     }
   }
 

@@ -244,7 +244,11 @@ model Visita {
 model TokenAcesso {
   id               String      @id @default(cuid())
   visitaId         String      @unique
-  tokenHash        String      @unique // sha256 — o token cru só aparece uma vez na UI
+  tokenHash        String      @unique // sha256 — usado para validar o acesso
+  // Token cru, guardado APENAS enquanto o link está ATIVO, para permitir
+  // reenvio (WhatsApp/copiar). É zerado assim que o link é usado, revogado
+  // ou expira — a partir daí resta só o hash.
+  tokenPlano       String?     @db.Text
   expiraEm         DateTime
   status           StatusToken @default(ATIVO)
   primeiroAcessoEm DateTime?
@@ -286,6 +290,7 @@ model Evidencia {
   respostaId   String? // evidência de resposta do avaliador
   acaoId       String? // OU foto da correção de um plano de ação
   tipo         TipoEvidencia @default(FOTO)
+  legenda      String?       @db.Text // comentário/legenda da foto (opcional)
   storageKey   String
   mimeType     String
   tamanhoBytes Int

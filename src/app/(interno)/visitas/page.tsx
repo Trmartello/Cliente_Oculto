@@ -11,7 +11,10 @@ import {
   formatarData,
   formatarScore,
 } from "@/lib/formato";
+import { baseUrlPublica } from "@/lib/token-avaliacao";
 import { VisitaNovaForm } from "./visita-nova-form";
+import { CompartilharLink } from "./compartilhar-link";
+import { mensagemConvite } from "./convite";
 import type { Prisma, StatusVisita } from "@prisma/client";
 
 export const metadata = { title: "Visitas — Cliente Oculto" };
@@ -55,6 +58,9 @@ export default async function VisitasPage({
       orderBy: [{ nome: "asc" }, { versao: "desc" }],
     }),
   ]);
+
+  // Base pública para reconstruir o link dos tokens ativos (reenvio).
+  const base = await baseUrlPublica();
 
   return (
     <div>
@@ -154,11 +160,25 @@ export default async function VisitasPage({
               )}
             </td>
             <td className="px-4 py-3 text-xs text-slate-500">
-              {v.token
-                ? v.token.status === "ATIVO"
-                  ? `válido até ${formatarData(v.token.expiraEm)}`
-                  : v.token.status.toLowerCase()
-                : "—"}
+              {v.token && v.token.status === "ATIVO" ? (
+                <div className="space-y-1.5">
+                  <p>válido até {formatarData(v.token.expiraEm)}</p>
+                  {admin && v.token.tokenPlano && (
+                    <CompartilharLink
+                      variante="compacto"
+                      link={`${base}/avaliar/${v.token.tokenPlano}`}
+                      mensagem={mensagemConvite(
+                        v.posto.nome,
+                        `${base}/avaliar/${v.token.tokenPlano}`,
+                      )}
+                    />
+                  )}
+                </div>
+              ) : v.token ? (
+                v.token.status.toLowerCase()
+              ) : (
+                "—"
+              )}
             </td>
           </tr>
         ))}

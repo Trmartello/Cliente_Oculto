@@ -20,18 +20,34 @@ import {
 
 export const metadata = { title: "Dashboard — Cliente Oculto" };
 
+/** Normaliza um searchParam de seleção múltipla (repetido na URL). */
+function lista(v: string | string[] | undefined): string[] {
+  if (v === undefined) return [];
+  return (Array.isArray(v) ? v : [v]).filter(Boolean);
+}
+
+function dataBR(iso: string): string {
+  const [ano, mes, dia] = iso.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    posto?: string;
+    posto?: string | string[];
     inicio?: string;
     fim?: string;
-    bloco?: string;
+    bloco?: string | string[];
+    mes?: string | string[];
   }>;
 }) {
   const sessao = await exigirSessao();
-  const { posto, inicio, fim, bloco } = await searchParams;
+  const params = await searchParams;
+  const postosSel = lista(params.posto);
+  const blocosSel = lista(params.bloco);
+  const mesesSel = lista(params.mes);
+  const { inicio, fim } = params;
 
   const postos = await prisma.posto.findMany({
     where: { ativo: true, ...escopoPosto(sessao) },
@@ -39,20 +55,29 @@ export default async function DashboardPage({
   });
 
   const dados = await carregarDashboard(sessao, {
-    postoId: posto || undefined,
+    postoIds: postosSel.length ? postosSel : undefined,
     inicio: inicio ? new Date(inicio) : undefined,
     fim: fim ? new Date(`${fim}T23:59:59`) : undefined,
-    blocoNome: bloco || undefined,
+    blocosNomes: blocosSel.length ? blocosSel : undefined,
+    meses: mesesSel.length ? mesesSel : undefined,
   });
 
-  const postoSelecionado = posto
-    ? (postos.find((p) => p.id === posto) ?? null)
-    : null;
-  // Período que cobre exatamente um mês => veio do clique na evolução mensal.
-  const mesSelecionado =
-    inicio && fim && inicio.endsWith("-01") && inicio.slice(0, 7) === fim.slice(0, 7)
-      ? inicio.slice(0, 7)
+  const postosSelecionados = postosSel
+    .map((id) => postos.find((p) => p.id === id))
+    .filter((p): p is (typeof postos)[number] => Boolean(p))
+    .map((p) => ({ id: p.id, nome: p.nome }));
+
+  const rotuloPeriodo =
+    inicio || fim
+      ? `${inicio ? dataBR(inicio) : "…"} – ${fim ? dataBR(fim) : "…"}`
       : null;
+
+  const sufixoBlocos =
+    blocosSel.length === 1
+      ? `bloco ${blocosSel[0]}`
+      : blocosSel.length > 1
+        ? `${blocosSel.length} blocos`
+        : null;
 
   const faixaRede =
     dados.scoreMedio !== null ? faixaIgeo(dados.scoreMedio) : null;
@@ -64,16 +89,18 @@ export default async function DashboardPage({
         descricao="Índice Geral de Excelência Operacional (IGEO) e indicadores da rede"
       />
 
-      {/* Filtros */}
+      {/* Filtros manuais (o select de posto substitui a seleção clicada) */}
       <form className="mb-6 flex flex-wrap items-end gap-3" method="get">
         <label className="block text-sm">
           <span className="font-medium text-slate-700">Posto</span>
           <select
             name="posto"
-            defaultValue={posto ?? ""}
+            defaultValue={postosSel.length === 1 ? postosSel[0] : ""}
             className="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm"
           >
-            <option value="">Todos</option>
+            <option value="">
+              {postosSel.length > 1 ? `(${postosSel.length} selecionados)` : "Todos"}
+            </option>
             {postos.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.nome}
@@ -99,7 +126,12 @@ export default async function DashboardPage({
             className="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
         </label>
-        {bloco && <input type="hidden" name="bloco" value={bloco} />}
+        {blocosSel.map((b) => (
+          <input key={b} type="hidden" name="bloco" value={b} />
+        ))}
+        {mesesSel.map((m) => (
+          <input key={m} type="hidden" name="mes" value={m} />
+        ))}
         <button
           type="submit"
           className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
@@ -108,18 +140,19 @@ export default async function DashboardPage({
         </button>
       </form>
 
-      {/* Cross-filter: chips dos filtros ativos */}
+      {/* Cross-filter: chips dos filtros ativos (um por valor selecionado) */}
       <FiltrosAtivos
-        postoNome={postoSelecionado?.nome ?? null}
-        blocoNome={bloco ?? null}
-        mesSelecionado={mesSelecionado}
+        postos={postosSelecionados}
+        blocos={blocosSel}
+        meses={mesesSel}
+        periodo={rotuloPeriodo}
       />
 
       {/* Cards de indicadores */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <p className="text-xs font-semibold uppercase text-slate-500">
-            {bloco ? `Score do bloco ${bloco}` : "Score geral (IGEO)"}
+            {sufixoBlocos ? `Score — ${sufixoBlocos}` : "Score geral (IGEO)"}
           </p>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-3xl font-bold text-slate-900">
@@ -177,12 +210,12 @@ export default async function DashboardPage({
               </h2>
               <EvolucaoChart
                 dados={dados.evolucaoMensal}
-                mesSelecionado={mesSelecionado}
+                mesesSelecionados={mesesSel}
               />
             </Card>
             <Card>
               <h2 className="mb-2 font-semibold text-slate-900">
-                Ranking dos postos{bloco ? ` — bloco ${bloco}` : ""}
+                Ranking dos postos{sufixoBlocos ? ` — ${sufixoBlocos}` : ""}
               </h2>
               <RankingChart
                 dados={dados.rankingPostos.map((r) => ({
@@ -190,7 +223,7 @@ export default async function DashboardPage({
                   nome: r.nome,
                   score: r.score,
                 }))}
-                postoSelecionadoId={posto ?? null}
+                postosSelecionados={postosSel}
               />
             </Card>
           </div>
@@ -204,7 +237,7 @@ export default async function DashboardPage({
                 Blocos em vermelho combinam alta importância estratégica com
                 baixo desempenho — prioridades de ação.
               </p>
-              <MatrizChart dados={dados.matriz} blocoSelecionado={bloco ?? null} />
+              <MatrizChart dados={dados.matriz} blocosSelecionados={blocosSel} />
             </Card>
             <Card>
               <h2 className="mb-3 font-semibold text-slate-900">
@@ -212,7 +245,7 @@ export default async function DashboardPage({
               </h2>
               <BlocosTable
                 dados={dados.scorePorBloco}
-                blocoSelecionado={bloco ?? null}
+                blocosSelecionados={blocosSel}
               />
               <div className="mt-4 border-t border-slate-100 pt-3">
                 <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
@@ -255,7 +288,7 @@ export default async function DashboardPage({
                   key={p.postoId}
                   postoId={p.postoId}
                   posto={p.posto}
-                  postoSelecionadoId={posto ?? null}
+                  postosSelecionados={postosSel}
                 >
                   <ol className="mt-1 list-decimal pl-5 text-sm text-slate-700">
                     {p.oportunidades.map((o) => (

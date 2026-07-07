@@ -6,11 +6,17 @@ import { round2 } from "@/domain/score/engine";
 import type { Prisma } from "@prisma/client";
 
 export interface FiltrosDashboard {
-  postoId?: string;
+  /** Cross-filter estilo BI: seleção múltipla de postos (OR entre eles). */
+  postoIds?: string[];
   inicio?: Date;
   fim?: Date;
-  /** Cross-filter estilo BI: indicadores passam a usar o score deste bloco. */
-  blocoNome?: string;
+  /** Meses selecionados na evolução, formato "AAAA-MM" (OR entre eles). */
+  meses?: string[];
+  /**
+   * Blocos selecionados: os indicadores passam a usar a média ponderada
+   * (pelos pesos do snapshot) dos scores desses blocos em cada visita.
+   */
+  blocosNomes?: string[];
 }
 
 interface ScoreBlocoSnapshot {
@@ -60,14 +66,25 @@ function media(valores: number[]): number | null {
   return round2(valores.reduce((s, v) => s + v, 0) / valores.length);
 }
 
+function chaveMes(data: Date): string {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export async function carregarDashboard(
   sessao: Sessao,
   filtros: FiltrosDashboard,
 ): Promise<DadosDashboard> {
-  const whereVisita: Prisma.VisitaWhereInput = {
+  const postoIds = filtros.postoIds ?? [];
+  const meses = filtros.meses ?? [];
+  const blocosNomes = filtros.blocosNomes ?? [];
+
+  // Busca sem os filtros de posto/mês (aplicados em memória): assim cada
+  // gráfico de ORIGEM continua mostrando todos os seus itens — o ranking
+  // exibe todos os postos e a evolução todos os meses, com os não
+  // selecionados apenas esmaecidos, como numa ferramenta de BI.
+  const wherePeriodo: Prisma.VisitaWhereInput = {
     ...escopoVisita(sessao),
     status: "ENVIADA",
-    ...(filtros.postoId ? { postoId: filtros.postoId } : {}),
     ...(filtros.inicio || filtros.fim
       ? {
           dataEnvio: {
@@ -78,9 +95,36 @@ export async function carregarDashboard(
       : {}),
   };
 
-  const [visitas, ncsAbertas, criticidadeGroups] = await Promise.all([
+  // Versão completa (posto + mês) para as agregações feitas no banco.
+  const whereVisitaCompleto: Prisma.VisitaWhereInput = {
+    ...wherePeriodo,
+    ...(postoIds.length ? { postoId: { in: postoIds } } : {}),
+    ...(meses.length
+      ? {
+          AND: [
+            {
+              OR: meses.map((m) => {
+                const [ano, mm] = m.split("-").map(Number);
+                return {
+                  dataEnvio: {
+                    gte: new Date(ano, mm - 1, 1),
+                    lt: new Date(ano, mm, 1),
+                  },
+                };
+              }),
+            },
+          ],
+        }
+      : {}),
+  };
+
+  const filtroBlocoPergunta = blocosNomes.length
+    ? { pergunta: { bloco: { nome: { in: blocosNomes } } } }
+    : {};
+
+  const [visitasTodas, ncsAbertas, criticidadeGroups] = await Promise.all([
     prisma.visita.findMany({
-      where: whereVisita,
+      where: wherePeriodo,
       include: { posto: { select: { id: true, nome: true } } },
       orderBy: { dataEnvio: "asc" },
     }),
@@ -88,10 +132,10 @@ export async function carregarDashboard(
       where: {
         ...escopoNC(sessao),
         status: { in: ["ABERTA", "EM_ANDAMENTO"] },
-        ...(filtros.postoId ? { visita: { postoId: filtros.postoId } } : {}),
-        ...(filtros.blocoNome
-          ? { pergunta: { bloco: { nome: filtros.blocoNome } } }
+        ...(postoIds.length
+          ? { visita: { postoId: { in: postoIds } } }
           : {}),
+        ...filtroBlocoPergunta,
       },
     }),
     prisma.resposta.groupBy({
@@ -99,23 +143,39 @@ export async function carregarDashboard(
       where: {
         criticidadeSnapshot: { not: null },
         notaObtida: { not: null },
-        visita: whereVisita,
-        ...(filtros.blocoNome
-          ? { pergunta: { bloco: { nome: filtros.blocoNome } } }
-          : {}),
+        visita: whereVisitaCompleto,
+        ...filtroBlocoPergunta,
       },
       _count: { _all: true },
     }),
   ]);
 
-  // Score de referência da visita: o final ou, no cross-filter, o do bloco.
-  function scoreDe(v: (typeof visitas)[number]): number | null {
-    if (!filtros.blocoNome) {
+  const noPosto = (v: (typeof visitasTodas)[number]) =>
+    postoIds.length === 0 || postoIds.includes(v.posto.id);
+  const noMes = (v: (typeof visitasTodas)[number]) =>
+    meses.length === 0 ||
+    (v.dataEnvio !== null && meses.includes(chaveMes(new Date(v.dataEnvio))));
+
+  // Painel (cards, blocos, matriz, oportunidades): todos os filtros.
+  const visitas = visitasTodas.filter((v) => noPosto(v) && noMes(v));
+
+  // Score de referência da visita: o final ou, no cross-filter por bloco,
+  // a média dos blocos selecionados ponderada pelos pesos do snapshot
+  // (com um único bloco selecionado é o próprio score do bloco).
+  function scoreDe(v: (typeof visitasTodas)[number]): number | null {
+    if (blocosNomes.length === 0) {
       return v.scoreFinal === null ? null : Number(v.scoreFinal);
     }
-    const blocos = (v.scoresPorBloco as unknown as ScoreBlocoSnapshot[]) ?? [];
-    const b = blocos.find((x) => x.nome === filtros.blocoNome);
-    return b && b.pontua && b.score !== null ? b.score : null;
+    const blocos = ((v.scoresPorBloco as unknown as ScoreBlocoSnapshot[]) ?? [])
+      .filter(
+        (b) => blocosNomes.includes(b.nome) && b.pontua && b.score !== null,
+      );
+    if (blocos.length === 0) return null;
+    const pesoTotal = blocos.reduce((s, b) => s + b.peso, 0);
+    if (pesoTotal <= 0) return media(blocos.map((b) => b.score as number));
+    return round2(
+      blocos.reduce((s, b) => s + b.peso * (b.score as number), 0) / pesoTotal,
+    );
   }
 
   const scores = visitas
@@ -123,11 +183,13 @@ export async function carregarDashboard(
     .filter((s): s is number => s !== null);
 
   // ---- Ranking de postos ----
+  // Não se filtra pelo próprio posto (o gráfico é a origem desse filtro):
+  // mostra todos os postos e o client esmaece os fora da seleção.
   const porPosto = new Map<
     string,
     { nome: string; scores: number[]; falhas: number }
   >();
-  for (const v of visitas) {
+  for (const v of visitasTodas.filter(noMes)) {
     const atual = porPosto.get(v.posto.id) ?? {
       nome: v.posto.nome,
       scores: [],
@@ -149,12 +211,12 @@ export async function carregarDashboard(
     .sort((a, b) => b.score - a.score);
 
   // ---- Evolução mensal ----
+  // Idem: não se filtra pelos próprios meses selecionados.
   const porMes = new Map<string, number[]>();
-  for (const v of visitas) {
+  for (const v of visitasTodas.filter(noPosto)) {
     const s = scoreDe(v);
     if (s === null || !v.dataEnvio) continue;
-    const d = new Date(v.dataEnvio);
-    const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const chave = chaveMes(new Date(v.dataEnvio));
     porMes.set(chave, [...(porMes.get(chave) ?? []), s]);
   }
   const evolucaoMensal = [...porMes.entries()]

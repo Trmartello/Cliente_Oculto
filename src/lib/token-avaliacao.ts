@@ -85,7 +85,7 @@ export async function validarToken(tokenBruto: string): Promise<ValidacaoToken> 
       await prisma.$transaction([
         prisma.tokenAcesso.update({
           where: { id: token.id },
-          data: { status: "EXPIRADO" },
+          data: { status: "EXPIRADO", tokenPlano: null },
         }),
         prisma.visita.update({
           where: { id: token.visitaId },

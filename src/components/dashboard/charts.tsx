@@ -51,37 +51,41 @@ function rotuloMes(mes: string): string {
   return `${MESES[Number(m) - 1]}/${ano.slice(2)}`;
 }
 
-// ============ CROSS-FILTER (estilo BI) ============
-// O clique num elemento gráfico grava o filtro na URL; o servidor recalcula
-// todo o painel (com RBAC) e o estado filtrado vira um link compartilhável.
+// ============ CROSS-FILTER (estilo BI, seleção múltipla) ============
+// Cada clique ADICIONA o item à seleção daquela dimensão (clicar de novo
+// remove). As seleções vivem na URL como parâmetros repetidos
+// (?posto=a&posto=b&bloco=X&mes=2026-06): OR dentro da mesma dimensão,
+// AND entre dimensões — e o estado do painel segue compartilhável.
 
 function useFiltrosBI() {
   const router = useRouter();
   const sp = useSearchParams();
   const [pendente, startTransition] = useTransition();
 
-  function aplicar(mudancas: Record<string, string | null>) {
+  function aplicar(mudancas: Record<string, string | string[] | null>) {
     const qs = new URLSearchParams(sp.toString());
     for (const [chave, valor] of Object.entries(mudancas)) {
-      if (valor === null || valor === "") qs.delete(chave);
-      else qs.set(chave, valor);
+      qs.delete(chave);
+      if (valor === null) continue;
+      for (const v of Array.isArray(valor) ? valor : [valor]) {
+        if (v) qs.append(chave, v);
+      }
     }
     startTransition(() => {
       router.replace(`?${qs.toString()}`, { scroll: false });
     });
   }
 
-  return { sp, aplicar, pendente };
-}
+  /** Adiciona/remove um valor da seleção múltipla do parâmetro. */
+  function toggle(param: string, valor: string) {
+    const atuais = sp.getAll(param);
+    const novos = atuais.includes(valor)
+      ? atuais.filter((v) => v !== valor)
+      : [...atuais, valor];
+    aplicar({ [param]: novos.length ? novos : null });
+  }
 
-/** Período (inicio/fim) que cobre exatamente o mês "AAAA-MM". */
-function periodoDoMes(mes: string): { inicio: string; fim: string } {
-  const [ano, m] = mes.split("-").map(Number);
-  const ultimoDia = new Date(ano, m, 0).getDate();
-  return {
-    inicio: `${mes}-01`,
-    fim: `${mes}-${String(ultimoDia).padStart(2, "0")}`,
-  };
+  return { sp, aplicar, toggle, pendente };
 }
 
 const dimPendente = (pendente: boolean) =>
@@ -90,29 +94,51 @@ const dimPendente = (pendente: boolean) =>
 // ============ CHIPS DE FILTROS ATIVOS ============
 
 export function FiltrosAtivos({
-  postoNome,
-  blocoNome,
-  mesSelecionado,
+  postos,
+  blocos,
+  meses,
+  periodo,
 }: {
-  postoNome: string | null;
-  blocoNome: string | null;
-  mesSelecionado: string | null;
+  /** Postos selecionados (id + nome já resolvido no servidor). */
+  postos: { id: string; nome: string }[];
+  blocos: string[];
+  meses: string[];
+  /** Rótulo do período manual (De/Até), quando preenchido no formulário. */
+  periodo: string | null;
 }) {
-  const { aplicar, pendente } = useFiltrosBI();
-  const chips: { rotulo: string; remover: Record<string, null> }[] = [];
-  if (postoNome) chips.push({ rotulo: `Posto: ${postoNome}`, remover: { posto: null } });
-  if (mesSelecionado)
-    chips.push({
-      rotulo: `Período: ${rotuloMes(mesSelecionado)}`,
-      remover: { inicio: null, fim: null },
-    });
-  if (blocoNome) chips.push({ rotulo: `Bloco: ${blocoNome}`, remover: { bloco: null } });
+  const { aplicar, toggle, pendente } = useFiltrosBI();
+  const chips: { chave: string; rotulo: string; remover: () => void }[] = [
+    ...postos.map((p) => ({
+      chave: `posto:${p.id}`,
+      rotulo: `Posto: ${p.nome}`,
+      remover: () => toggle("posto", p.id),
+    })),
+    ...meses.map((m) => ({
+      chave: `mes:${m}`,
+      rotulo: `Mês: ${rotuloMes(m)}`,
+      remover: () => toggle("mes", m),
+    })),
+    ...blocos.map((b) => ({
+      chave: `bloco:${b}`,
+      rotulo: `Bloco: ${b}`,
+      remover: () => toggle("bloco", b),
+    })),
+    ...(periodo
+      ? [
+          {
+            chave: "periodo",
+            rotulo: `Período: ${periodo}`,
+            remover: () => aplicar({ inicio: null, fim: null }),
+          },
+        ]
+      : []),
+  ];
 
   if (chips.length === 0) {
     return (
       <p className="mb-4 text-xs text-slate-400">
         💡 Clique nas barras, pontos e linhas dos gráficos para filtrar todo o
-        painel — clique de novo para desfazer.
+        painel — cada clique soma à seleção; clique de novo para desfazer.
       </p>
     );
   }
@@ -124,9 +150,9 @@ export function FiltrosAtivos({
       </span>
       {chips.map((c) => (
         <button
-          key={c.rotulo}
+          key={c.chave}
           type="button"
-          onClick={() => aplicar(c.remover)}
+          onClick={c.remover}
           className="flex items-center gap-1.5 rounded-full bg-blue-600 py-1 pl-3 pr-2 text-xs font-semibold text-white hover:bg-blue-700"
           title="Remover filtro"
         >
@@ -136,7 +162,9 @@ export function FiltrosAtivos({
       ))}
       <button
         type="button"
-        onClick={() => aplicar({ posto: null, bloco: null, inicio: null, fim: null })}
+        onClick={() =>
+          aplicar({ posto: null, bloco: null, mes: null, inicio: null, fim: null })
+        }
         className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
       >
         Limpar tudo
@@ -145,21 +173,16 @@ export function FiltrosAtivos({
   );
 }
 
-// ============ EVOLUÇÃO MENSAL (clique no mês filtra o período) ============
+// ============ EVOLUÇÃO MENSAL (clique nos meses soma à seleção) ============
 
 export function EvolucaoChart({
   dados,
-  mesSelecionado,
+  mesesSelecionados = [],
 }: {
   dados: { mes: string; score: number; visitas: number }[];
-  mesSelecionado?: string | null;
+  mesesSelecionados?: string[];
 }) {
-  const { aplicar, pendente } = useFiltrosBI();
-
-  function toggleMes(mes: string) {
-    if (mesSelecionado === mes) aplicar({ inicio: null, fim: null });
-    else aplicar(periodoDoMes(mes));
-  }
+  const { toggle, pendente } = useFiltrosBI();
 
   return (
     <div className={`cursor-pointer ${dimPendente(pendente)}`}>
@@ -169,7 +192,7 @@ export function EvolucaoChart({
           margin={{ top: 8, right: 16, left: -16, bottom: 0 }}
           onClick={(e) => {
             const mes = e?.activeLabel;
-            if (mes) toggleMes(String(mes));
+            if (mes) toggle("mes", String(mes));
           }}
         >
           <CartesianGrid stroke={GRID} strokeDasharray="3 3" vertical={false} />
@@ -201,7 +224,8 @@ export function EvolucaoChart({
                 cy: number;
                 payload: { mes: string };
               };
-              const ativo = payload.mes === mesSelecionado;
+              const haSelecao = mesesSelecionados.length > 0;
+              const ativo = mesesSelecionados.includes(payload.mes);
               return (
                 <circle
                   key={payload.mes}
@@ -209,12 +233,13 @@ export function EvolucaoChart({
                   cy={cy}
                   r={ativo ? 8 : 6}
                   fill={AZUL}
+                  fillOpacity={haSelecao && !ativo ? 0.35 : 1}
                   stroke={ativo ? "#1e3a8a" : "#fff"}
                   strokeWidth={ativo ? 3 : 1.5}
                   cursor="pointer"
                   onClick={(ev) => {
                     ev.stopPropagation();
-                    toggleMes(payload.mes);
+                    toggle("mes", payload.mes);
                   }}
                 />
               );
@@ -229,21 +254,18 @@ export function EvolucaoChart({
   );
 }
 
-// ============ RANKING DE POSTOS (clique na barra filtra o posto) ============
+// ============ RANKING DE POSTOS (clique nas barras soma à seleção) ============
 
 export function RankingChart({
   dados,
-  postoSelecionadoId,
+  postosSelecionados = [],
 }: {
   dados: { postoId: string; nome: string; score: number }[];
-  postoSelecionadoId?: string | null;
+  postosSelecionados?: string[];
 }) {
-  const { aplicar, pendente } = useFiltrosBI();
+  const { toggle, pendente } = useFiltrosBI();
   const altura = Math.max(160, dados.length * 44 + 40);
-
-  function togglePosto(id: string) {
-    aplicar({ posto: postoSelecionadoId === id ? null : id });
-  }
+  const haSelecao = postosSelecionados.length > 0;
 
   return (
     <div className={dimPendente(pendente)}>
@@ -278,15 +300,14 @@ export function RankingChart({
               style={{ fontSize: 12, fill: "#334155", fontWeight: 600 }}
             />
             {dados.map((d) => {
-              const apagado =
-                postoSelecionadoId && postoSelecionadoId !== d.postoId;
+              const apagado = haSelecao && !postosSelecionados.includes(d.postoId);
               return (
                 <Cell
                   key={d.postoId}
                   fill={corPorScore(d.score)}
                   fillOpacity={apagado ? 0.3 : 1}
                   cursor="pointer"
-                  onClick={() => togglePosto(d.postoId)}
+                  onClick={() => toggle("posto", d.postoId)}
                 />
               );
             })}
@@ -297,12 +318,12 @@ export function RankingChart({
   );
 }
 
-// ============ MATRIZ (clique no ponto filtra o bloco) ============
+// ============ MATRIZ (clique nos pontos soma blocos à seleção) ============
 
 export function MatrizChart({
   dados,
   limiarDesempenho = 85,
-  blocoSelecionado,
+  blocosSelecionados = [],
 }: {
   dados: {
     nome: string;
@@ -311,15 +332,12 @@ export function MatrizChart({
     prioridadeEstrategica: boolean;
   }[];
   limiarDesempenho?: number;
-  blocoSelecionado?: string | null;
+  blocosSelecionados?: string[];
 }) {
-  const { aplicar, pendente } = useFiltrosBI();
+  const { toggle, pendente } = useFiltrosBI();
   const prioridades = dados.filter((d) => d.prioridadeEstrategica);
   const demais = dados.filter((d) => !d.prioridadeEstrategica);
-
-  function toggleBloco(nome: string) {
-    aplicar({ bloco: blocoSelecionado === nome ? null : nome });
-  }
+  const haSelecao = blocosSelecionados.length > 0;
 
   const formaPonto = (cor: string) =>
     function Ponto(props: unknown) {
@@ -328,18 +346,18 @@ export function MatrizChart({
         cy: number;
         payload: { nome: string };
       };
-      const ativo = payload.nome === blocoSelecionado;
+      const ativo = blocosSelecionados.includes(payload.nome);
       return (
         <circle
           cx={cx}
           cy={cy}
           r={ativo ? 9 : 6}
           fill={cor}
-          fillOpacity={blocoSelecionado && !ativo ? 0.35 : 1}
+          fillOpacity={haSelecao && !ativo ? 0.35 : 1}
           stroke={ativo ? "#0f172a" : "#fff"}
           strokeWidth={ativo ? 2.5 : 1.5}
           cursor="pointer"
-          onClick={() => toggleBloco(payload.nome)}
+          onClick={() => toggle("bloco", payload.nome)}
         />
       );
     };
@@ -416,20 +434,17 @@ export function MatrizChart({
   );
 }
 
-// ============ TABELA DE BLOCOS (clique na linha filtra o bloco) ============
+// ============ TABELA DE BLOCOS (clique nas linhas soma à seleção) ============
 
 export function BlocosTable({
   dados,
-  blocoSelecionado,
+  blocosSelecionados = [],
 }: {
   dados: { nome: string; score: number; importancia: number }[];
-  blocoSelecionado?: string | null;
+  blocosSelecionados?: string[];
 }) {
-  const { aplicar, pendente } = useFiltrosBI();
-
-  function toggleBloco(nome: string) {
-    aplicar({ bloco: blocoSelecionado === nome ? null : nome });
-  }
+  const { toggle, pendente } = useFiltrosBI();
+  const haSelecao = blocosSelecionados.length > 0;
 
   return (
     <div className={`overflow-x-auto ${dimPendente(pendente)}`}>
@@ -443,17 +458,17 @@ export function BlocosTable({
         </thead>
         <tbody className="divide-y divide-slate-100">
           {dados.map((b) => {
-            const ativo = b.nome === blocoSelecionado;
+            const ativo = blocosSelecionados.includes(b.nome);
             return (
               <tr
                 key={b.nome}
-                onClick={() => toggleBloco(b.nome)}
-                title={ativo ? "Clique para remover o filtro" : "Clique para filtrar o painel por este bloco"}
+                onClick={() => toggle("bloco", b.nome)}
+                title={ativo ? "Clique para remover o filtro" : "Clique para somar este bloco ao filtro do painel"}
                 className={`cursor-pointer transition-colors ${
                   ativo
                     ? "bg-blue-50 ring-1 ring-inset ring-blue-200"
                     : "hover:bg-slate-50"
-                } ${blocoSelecionado && !ativo ? "opacity-50" : ""}`}
+                } ${haSelecao && !ativo ? "opacity-50" : ""}`}
               >
                 <td className="py-2 pr-4 font-medium">{b.nome}</td>
                 <td className="py-2 pr-4">{b.importancia.toFixed(1)}%</td>
@@ -477,30 +492,31 @@ export function BlocosTable({
   );
 }
 
-// ============ OPORTUNIDADES POR POSTO (clique no posto filtra) ============
+// ============ OPORTUNIDADES POR POSTO (clique soma o posto à seleção) ============
 
 export function OportunidadePosto({
   postoId,
   posto,
-  postoSelecionadoId,
+  postosSelecionados = [],
   children,
 }: {
   postoId: string;
   posto: string;
-  postoSelecionadoId?: string | null;
+  postosSelecionados?: string[];
   children: React.ReactNode;
 }) {
-  const { aplicar, pendente } = useFiltrosBI();
-  const ativo = postoSelecionadoId === postoId;
+  const { toggle, pendente } = useFiltrosBI();
+  const haSelecao = postosSelecionados.length > 0;
+  const ativo = postosSelecionados.includes(postoId);
   return (
     <div
-      onClick={() => aplicar({ posto: ativo ? null : postoId })}
-      title={ativo ? "Clique para remover o filtro" : "Clique para filtrar o painel por este posto"}
+      onClick={() => toggle("posto", postoId)}
+      title={ativo ? "Clique para remover o filtro" : "Clique para somar este posto ao filtro do painel"}
       className={`cursor-pointer rounded-lg border p-3 transition-colors ${dimPendente(pendente)} ${
         ativo
           ? "border-blue-300 bg-blue-50"
           : "border-slate-100 bg-slate-50 hover:bg-slate-100"
-      } ${postoSelecionadoId && !ativo ? "opacity-50" : ""}`}
+      } ${haSelecao && !ativo ? "opacity-50" : ""}`}
     >
       <p className="font-semibold text-slate-900">{posto}</p>
       {children}
