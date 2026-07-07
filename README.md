@@ -135,6 +135,12 @@ registra a base usada (`[link-avaliacao] …`).*
 4. **Questionário oficial** — revise pesos/criticidades em *Questionários*;
    com visitas enviadas ele fica imutável (crie nova versão para mudar).
 5. **Backup do banco** — habilite backups do volume MySQL no Railway.
+6. **E-mails (opcional)** — configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+   `SMTP_PASS` e `SMTP_FROM` para receber alerta de NC aberta; sem SMTP o
+   sistema funciona normalmente (envio vira log). Para o resumo diário de
+   pendências vencidas, defina `CRON_SECRET` e agende um cron (Railway cron
+   ou cron-job.org) chamando
+   `GET /api/tarefas/notificar` com `Authorization: Bearer $CRON_SECRET`.
 
 ## Estrutura
 

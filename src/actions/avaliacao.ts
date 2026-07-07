@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
-import { validarToken } from "@/lib/token-avaliacao";
+import { enviarEmail, rodapeEmail } from "@/lib/email";
+import { baseUrlPublica, validarToken } from "@/lib/token-avaliacao";
 import { calcularScore } from "@/domain/score/engine";
 import type {
   QuestionarioConfig,
@@ -545,6 +546,46 @@ export async function enviarAvaliacao(
       data: { usadoEm: agora },
     });
   });
+
+  // Notificação por e-mail das NCs automáticas (melhor-esforço; requer
+  // SMTP_* configurado — sem isso vira apenas log).
+  if (resultado.ncsACriar.length > 0) {
+    try {
+      const [posto, interessados] = await Promise.all([
+        prisma.posto.findUnique({
+          where: { id: visita.postoId },
+          select: { nome: true, cidade: true, uf: true },
+        }),
+        prisma.usuario.findMany({
+          where: {
+            ativo: true,
+            OR: [
+              { papel: { in: ["ADMIN", "CONTROLADORIA"] } },
+              { papel: "GERENTE", postoId: visita.postoId },
+            ],
+          },
+          select: { email: true },
+        }),
+      ]);
+      const base = await baseUrlPublica();
+      const lista = resultado.ncsACriar
+        .map((nc) => `<li>${nc.descricao}</li>`)
+        .join("");
+      await enviarEmail(
+        interessados.map((u) => u.email),
+        `⚠ ${resultado.ncsACriar.length} Não Conformidade(s) — ${posto?.nome ?? "posto"}`,
+        `<p>A avaliação de cliente oculto do posto
+           <strong>${posto?.nome ?? ""} (${posto?.cidade ?? ""}/${posto?.uf ?? ""})</strong>
+           abriu as seguintes não conformidades:</p>
+         <ul>${lista}</ul>
+         <p>Score final: <strong>${resultado.scoreFinal?.toFixed(1) ?? "—"}</strong></p>
+         <p><a href="${base}/nao-conformidades" style="color:#2563eb">Tratar as não conformidades</a></p>
+         ${rodapeEmail(base)}`,
+      );
+    } catch (e) {
+      console.error("[email] falha na notificação de NC:", e);
+    }
+  }
 
   redirect("/avaliar/enviado");
 }
