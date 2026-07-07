@@ -101,6 +101,12 @@ enum TipoEvidencia {
   FOTO
 }
 
+// Natureza do questionário — mesma engine, dashboards separados.
+enum TipoAvaliacao {
+  CLIENTE_OCULTO
+  AUDITORIA_OPERACIONAL
+}
+
 // ============ CADASTROS ============
 
 model Posto {
@@ -150,6 +156,7 @@ model Questionario {
   descricao String?            @db.Text
   versao    Int                @default(1)
   status    StatusQuestionario @default(RASCUNHO)
+  tipo      TipoAvaliacao      @default(CLIENTE_OCULTO)
 
   // Penalidade aplicada ao score final quando há falha crítica
   penalidadeCriticaTipo  TipoPenalidadeCritica @default(TETO)

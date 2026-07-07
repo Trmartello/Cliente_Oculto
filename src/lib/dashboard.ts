@@ -19,6 +19,8 @@ export interface FiltrosDashboard {
   blocosNomes?: string[];
   /** Ciclos/campanhas selecionados (OR entre eles). */
   ciclosIds?: string[];
+  /** Natureza da avaliação exibida no painel (default: CLIENTE_OCULTO). */
+  tipoAvaliacao?: "CLIENTE_OCULTO" | "AUDITORIA_OPERACIONAL";
 }
 
 interface ScoreBlocoSnapshot {
@@ -97,6 +99,7 @@ export async function carregarDashboard(
   const wherePeriodo: Prisma.VisitaWhereInput = {
     ...escopoVisita(sessao),
     status: "ENVIADA",
+    questionario: { tipo: filtros.tipoAvaliacao ?? "CLIENTE_OCULTO" },
     ...(filtros.inicio || filtros.fim
       ? {
           dataEnvio: {

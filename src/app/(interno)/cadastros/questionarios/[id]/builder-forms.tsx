@@ -29,6 +29,7 @@ export function ConfigForm({
     id: string;
     nome: string;
     descricao: string;
+    tipo: string;
     penalidadeCriticaTipo: string;
     penalidadeCriticaValor: number;
   };
@@ -94,6 +95,19 @@ export function ConfigForm({
                 defaultValue={questionario.descricao}
                 className={`mt-1 ${inputCls}`}
               />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-medium text-slate-700">Tipo de avaliação</span>
+              <select
+                name="tipo"
+                defaultValue={questionario.tipo}
+                className={`mt-1 ${inputCls}`}
+              >
+                <option value="CLIENTE_OCULTO">Cliente Oculto</option>
+                <option value="AUDITORIA_OPERACIONAL">
+                  Auditoria Operacional
+                </option>
+              </select>
             </label>
           </div>
           <div className="rounded-xl bg-slate-50 p-3">

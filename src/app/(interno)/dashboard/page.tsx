@@ -44,6 +44,7 @@ export default async function DashboardPage({
     bloco?: string | string[];
     mes?: string | string[];
     ciclo?: string | string[];
+    tipo?: string;
   }>;
 }) {
   const sessao = await exigirSessao();
@@ -52,6 +53,10 @@ export default async function DashboardPage({
   const blocosSel = lista(params.bloco);
   const mesesSel = lista(params.mes);
   const ciclosSel = lista(params.ciclo);
+  const tipoAvaliacao =
+    params.tipo === "AUDITORIA_OPERACIONAL"
+      ? ("AUDITORIA_OPERACIONAL" as const)
+      : ("CLIENTE_OCULTO" as const);
   const { inicio, fim } = params;
 
   const [postos, ciclosTodos] = await Promise.all([
@@ -69,6 +74,7 @@ export default async function DashboardPage({
     blocosNomes: blocosSel.length ? blocosSel : undefined,
     meses: mesesSel.length ? mesesSel : undefined,
     ciclosIds: ciclosSel.length ? ciclosSel : undefined,
+    tipoAvaliacao,
   });
 
   const postosSelecionados = postosSel
@@ -101,6 +107,30 @@ export default async function DashboardPage({
         titulo="Dashboard Executivo"
         descricao="Índice Geral de Excelência Operacional (IGEO) e indicadores da rede"
       />
+
+      {/* Abas por tipo de avaliação */}
+      <div className="mb-4 flex gap-1 rounded-xl bg-slate-100 p-1 text-sm font-medium w-fit">
+        <a
+          href="/dashboard"
+          className={`rounded-lg px-4 py-1.5 ${
+            tipoAvaliacao === "CLIENTE_OCULTO"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Cliente Oculto
+        </a>
+        <a
+          href="/dashboard?tipo=AUDITORIA_OPERACIONAL"
+          className={`rounded-lg px-4 py-1.5 ${
+            tipoAvaliacao === "AUDITORIA_OPERACIONAL"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Auditoria Operacional
+        </a>
+      </div>
 
       {/* Filtros manuais (o select de posto substitui a seleção clicada) */}
       <form className="mb-6 flex flex-wrap items-end gap-3" method="get">
@@ -148,6 +178,9 @@ export default async function DashboardPage({
         {ciclosSel.map((c) => (
           <input key={c} type="hidden" name="ciclo" value={c} />
         ))}
+        {tipoAvaliacao !== "CLIENTE_OCULTO" && (
+          <input type="hidden" name="tipo" value={tipoAvaliacao} />
+        )}
         <button
           type="submit"
           className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"

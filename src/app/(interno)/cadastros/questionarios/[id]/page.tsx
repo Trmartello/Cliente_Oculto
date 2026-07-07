@@ -76,6 +76,7 @@ export default async function QuestionarioBuilderPage({
             id: questionario.id,
             nome: questionario.nome,
             descricao: questionario.descricao ?? "",
+            tipo: questionario.tipo,
             penalidadeCriticaTipo: questionario.penalidadeCriticaTipo,
             penalidadeCriticaValor: Number(questionario.penalidadeCriticaValor),
           }}

@@ -71,6 +71,11 @@ export default async function QuestionariosPage() {
                 >
                   {q.nome}
                 </Link>
+                {q.tipo === "AUDITORIA_OPERACIONAL" && (
+                  <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                    Auditoria
+                  </span>
+                )}
               </td>
               <td className="px-4 py-3">v{q.versao}</td>
               <td className="px-4 py-3">

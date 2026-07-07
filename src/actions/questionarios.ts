@@ -31,6 +31,9 @@ const questionarioSchema = z.object({
   descricao: z.string().trim().optional(),
   penalidadeCriticaTipo: z.enum(["NENHUMA", "PERCENTUAL", "TETO"]),
   penalidadeCriticaValor: z.coerce.number().min(0).max(100),
+  tipo: z
+    .enum(["CLIENTE_OCULTO", "AUDITORIA_OPERACIONAL"])
+    .default("CLIENTE_OCULTO"),
 });
 
 export async function criarQuestionario(
@@ -124,6 +127,7 @@ export async function gerarNovaVersao(id: string): Promise<void> {
       status: "RASCUNHO",
       penalidadeCriticaTipo: original.penalidadeCriticaTipo,
       penalidadeCriticaValor: original.penalidadeCriticaValor,
+      tipo: original.tipo,
       blocos: {
         create: original.blocos.map((b) => ({
           nome: b.nome,

@@ -29,6 +29,21 @@ export function QuestionarioNovoForm() {
             <span className="font-medium text-slate-700">Descrição</span>
             <input name="descricao" className={`mt-1 ${inputCls}`} />
           </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="font-medium text-slate-700">Tipo de avaliação</span>
+            <select name="tipo" defaultValue="CLIENTE_OCULTO" className={`mt-1 ${inputCls}`}>
+              <option value="CLIENTE_OCULTO">
+                Cliente Oculto — avaliador anônimo pelo link
+              </option>
+              <option value="AUDITORIA_OPERACIONAL">
+                Auditoria Operacional — vistoria interna identificada
+              </option>
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">
+              Mesma mecânica de pesos e score; o dashboard separa os
+              resultados por tipo.
+            </span>
+          </label>
           <label className="block text-sm">
             <span className="font-medium text-slate-700">
               Penalidade por falha crítica
