@@ -363,8 +363,19 @@ export async function enviarAvaliacao(
         },
       },
       blocosRespostas: true,
+      respostas: {
+        select: {
+          perguntaId: true,
+          _count: { select: { evidencias: true } },
+        },
+      },
     },
   });
+
+  // Fotos já enviadas por pergunta (valida requisito de perguntas FOTO).
+  const fotosPorPergunta = new Map(
+    visita.respostas.map((r) => [r.perguntaId, r._count.evidencias]),
+  );
 
   // Etapas marcadas como "não se aplica" pelo avaliador.
   const blocosNA = new Set(
@@ -384,8 +395,11 @@ export async function enviarAvaliacao(
     for (const p of bloco.perguntas) {
       if (!p.obrigatoria) continue;
       const r = porPergunta.get(p.id);
+      // requisito de foto é atendido por ao menos uma foto anexada
       const respondida =
-        r && (r.naoSeAplica || (r.valor !== null && r.valor !== ""));
+        p.tipo === "FOTO"
+          ? r?.naoSeAplica || (fotosPorPergunta.get(p.id) ?? 0) > 0
+          : r && (r.naoSeAplica || (r.valor !== null && r.valor.trim() !== ""));
       if (!respondida) {
         return {
           erro: `Responda a pergunta obrigatória "${p.texto}" (bloco ${bloco.nome})`,

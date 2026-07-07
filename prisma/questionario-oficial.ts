@@ -22,6 +22,8 @@ type Pergunta = {
   peso: number;
   criticidade: "BAIXA" | "MEDIA" | "ALTA" | "CRITICA";
   naoSeAplica?: boolean;
+  /** Default: obrigatória quando pontuável (estrelas). */
+  obrigatoria?: boolean;
 };
 
 const BLOCOS: { nome: string; peso: number; perguntas: Pergunta[] }[] = [
@@ -84,7 +86,8 @@ const BLOCOS: { nome: string; peso: number; perguntas: Pergunta[] }[] = [
       { texto: "Limpeza externa, fachada e jardins?", peso: 3, criticidade: "BAIXA" },
       { texto: "Comunicação visual e painel de preços legíveis?", peso: 2, criticidade: "MEDIA" },
       { texto: "Iluminação adequada?", peso: 2, criticidade: "MEDIA" },
-      { texto: "Registre uma foto geral da fachada", tipo: "FOTO", peso: 0, criticidade: "BAIXA" },
+      // requisito: a visita não é concluída sem a foto da fachada
+      { texto: "Registre uma foto geral da fachada", tipo: "FOTO", peso: 0, criticidade: "BAIXA", obrigatoria: true },
     ],
   },
 ];
@@ -94,7 +97,23 @@ async function main() {
     where: { nome: NOME },
   });
   if (existente) {
-    console.log(`[questionario-oficial] "${NOME}" já existe (v${existente.versao}) — nada a fazer.`);
+    // Correção pontual (jul/2026): a foto da fachada passou a ser requisito.
+    // Mudar "obrigatoria" não altera snapshots/histórico — só a validação
+    // de envios futuros —, então é seguro ajustar o questionário existente.
+    const corrigidas = await prisma.pergunta.updateMany({
+      where: {
+        bloco: { questionarioId: existente.id },
+        tipo: "FOTO",
+        obrigatoria: false,
+      },
+      data: { obrigatoria: true },
+    });
+    console.log(
+      `[questionario-oficial] "${NOME}" já existe (v${existente.versao})` +
+        (corrigidas.count > 0
+          ? ` — ${corrigidas.count} pergunta(s) FOTO marcada(s) como requisito.`
+          : " — nada a fazer."),
+    );
     return;
   }
 
@@ -117,7 +136,7 @@ async function main() {
               tipo: p.tipo ?? "NOTA_1_5",
               peso: p.peso,
               criticidade: p.criticidade,
-              obrigatoria: (p.tipo ?? "NOTA_1_5") === "NOTA_1_5",
+              obrigatoria: p.obrigatoria ?? (p.tipo ?? "NOTA_1_5") === "NOTA_1_5",
               permiteNaoSeAplica: p.naoSeAplica ?? false,
               notaMaxima:
                 (p.tipo ?? "NOTA_1_5") === "NOTA_1_5" ? 5 : p.tipo === "SIM_NAO" ? 1 : 0,

@@ -624,10 +624,11 @@ export function AvaliacaoWizard({
   function pendentesDo(b: BlocoW): PerguntaW[] {
     if (naDe(b.id).naoSeAplica) return []; // etapa não se aplica ao posto
     return b.perguntas.filter((p) => {
-      if (!p.obrigatoria || p.tipo === "TEXTO") return false;
+      if (!p.obrigatoria) return false;
+      // requisito de foto: exige ao menos uma foto anexada
       if (p.tipo === "FOTO") return totalFotos(p.id) === 0;
       const r = respostaDe(p.id);
-      return !r.naoSeAplica && (r.valor === null || r.valor === "");
+      return !r.naoSeAplica && (r.valor === null || r.valor.trim() === "");
     });
   }
 
@@ -880,8 +881,8 @@ export function AvaliacaoWizard({
                 >
                   <p className="font-medium text-slate-900">
                     {idx + 1}. {p.texto}
-                    {p.obrigatoria && p.tipo !== "TEXTO" && (
-                      <span className="text-red-500"> *</span>
+                    {p.obrigatoria && (
+                      <span className="text-red-500" title="Item requisito"> *</span>
                     )}
                   </p>
 
