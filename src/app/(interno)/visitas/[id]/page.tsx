@@ -153,6 +153,14 @@ export default async function VisitaDetalhePage({
         descricao={`${visita.questionario.nome} (v${visita.questionario.versao}) · prevista para ${formatarData(visita.dataAgendada)}`}
         acoes={
           <div className="flex items-center gap-2">
+            {visita.status === "ENVIADA" && (
+              <Link
+                href={`/visitas/${visita.id}/imprimir`}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                🖨 Relatório / PDF
+              </Link>
+            )}
             <Badge cor={COR_STATUS_VISITA[visita.status]}>
               {ROTULO_STATUS_VISITA[visita.status]}
             </Badge>
