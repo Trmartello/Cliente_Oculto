@@ -119,6 +119,23 @@ Além da derivação automática acima, a validação de tokens passou a registr
 logs (`[avaliacao] token …` com o motivo de recusa) e a geração de links
 registra a base usada (`[link-avaliacao] …`).*
 
+## Checklist de go-live (produção)
+
+1. **Fotos permanentes** — crie um bucket S3-compatível (Cloudflare R2 é
+   grátis até 10 GB) e configure no serviço do Railway:
+   `STORAGE_DRIVER=s3`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION=auto`,
+   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Sem isso, o filesystem do
+   Railway é efêmero e **as fotos somem a cada deploy**.
+2. **Usuários reais** — em *Usuários*, crie seu administrador definitivo
+   (senha forte), saia, entre com ele e **desative** os usuários demo
+   (`*@clienteoculto.dev`, senha `senha123`). Login de inativo é bloqueado
+   e ninguém consegue desativar a si mesmo.
+3. **Meta da rede** — confira em *Metas* o score mínimo vigente (dispara NC
+   automática e alimenta o radar/benchmark do dashboard).
+4. **Questionário oficial** — revise pesos/criticidades em *Questionários*;
+   com visitas enviadas ele fica imutável (crie nova versão para mudar).
+5. **Backup do banco** — habilite backups do volume MySQL no Railway.
+
 ## Estrutura
 
 ```
