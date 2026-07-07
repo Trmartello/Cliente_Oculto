@@ -3,8 +3,10 @@
 import { useRef, useState, useTransition } from "react";
 import {
   criarObservacao,
+  editarObservacao,
   enviarAvaliacao,
   marcarBlocoNaoSeAplica,
+  removerFotoAvaliacao,
   removerObservacao,
   salvarRascunho,
   type RespostaRascunho,
@@ -151,14 +153,36 @@ function Estrelas({
   );
 }
 
-function MiniaturaFoto({ id, token }: { id: string; token: string }) {
+function MiniaturaFoto({
+  id,
+  token,
+  onExcluir,
+}: {
+  id: string;
+  token: string;
+  /** Quando presente, exibe o "×" sobre a foto para excluí-la. */
+  onExcluir?: () => void;
+}) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={`/api/evidencia/${id}?token=${encodeURIComponent(token)}`}
-      alt="Foto enviada"
-      className="h-16 w-16 rounded-lg border border-slate-200 object-cover"
-    />
+    <div className="relative">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/evidencia/${id}?token=${encodeURIComponent(token)}`}
+        alt="Foto enviada"
+        className="h-16 w-16 rounded-lg border border-slate-200 object-cover"
+      />
+      {onExcluir && (
+        <button
+          type="button"
+          onClick={onExcluir}
+          aria-label="Excluir esta foto"
+          title="Excluir esta foto"
+          className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/85 text-sm font-bold leading-none text-white shadow active:bg-red-600"
+        >
+          ×
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -174,6 +198,7 @@ function Observacoes({
   rascunho,
   onRascunho,
   onNovaObservacao,
+  onAtualizarObservacao,
   onRemoverObservacao,
 }: {
   token: string;
@@ -182,12 +207,21 @@ function Observacoes({
   rascunho: RascunhoObs;
   onRascunho: (r: RascunhoObs) => void;
   onNovaObservacao: (obs: ObservacaoLocal) => void;
+  onAtualizarObservacao: (obs: ObservacaoLocal) => void;
   onRemoverObservacao: (id: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  // para onde vai a próxima foto: composer ou edição em andamento
+  const destinoUpload = useRef<"composer" | "edicao">("composer");
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // edição de uma observação já salva
+  const [editando, setEditando] = useState<{
+    id: string;
+    texto: string;
+    novasFotos: string[];
+  } | null>(null);
 
   async function subirFoto(arquivo: File) {
     setEnviandoFoto(true);
@@ -201,13 +235,24 @@ function Observacoes({
       const resp = await fetch("/api/upload", { method: "POST", body: fd });
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.erro ?? "Falha no envio");
-      onRascunho({ ...rascunho, fotos: [...rascunho.fotos, json.id] });
+      if (destinoUpload.current === "edicao") {
+        setEditando((e) =>
+          e ? { ...e, novasFotos: [...e.novasFotos, json.id] } : e,
+        );
+      } else {
+        onRascunho({ ...rascunho, fotos: [...rascunho.fotos, json.id] });
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha no envio da foto");
     } finally {
       setEnviandoFoto(false);
       if (inputRef.current) inputRef.current.value = "";
     }
+  }
+
+  function pedirFoto(destino: "composer" | "edicao") {
+    destinoUpload.current = destino;
+    inputRef.current?.click();
   }
 
   async function adicionar() {
@@ -234,45 +279,188 @@ function Observacoes({
     await removerObservacao(token, id);
   }
 
+  /** Rejeita uma foto do composer (ainda não faz parte de observação). */
+  function excluirFotoRascunho(fid: string) {
+    onRascunho({ ...rascunho, fotos: rascunho.fotos.filter((f) => f !== fid) });
+    void removerFotoAvaliacao(token, fid);
+  }
+
+  /** Exclui uma foto de observação já salva (a observação some se esvaziar). */
+  function excluirFotoSalva(obs: ObservacaoLocal, fid: string) {
+    const restantes = obs.fotos.filter((f) => f !== fid);
+    if (!obs.texto && restantes.length === 0) onRemoverObservacao(obs.id);
+    else onAtualizarObservacao({ ...obs, fotos: restantes });
+    void removerFotoAvaliacao(token, fid);
+  }
+
+  /** Exclui uma foto recém-tirada dentro da edição. */
+  function excluirFotoEdicao(fid: string) {
+    setEditando((e) =>
+      e ? { ...e, novasFotos: e.novasFotos.filter((f) => f !== fid) } : e,
+    );
+    void removerFotoAvaliacao(token, fid);
+  }
+
+  async function salvarEdicao(obs: ObservacaoLocal) {
+    if (!editando) return;
+    setSalvando(true);
+    setErro(null);
+    const r = await editarObservacao(
+      token,
+      obs.id,
+      editando.texto,
+      editando.novasFotos,
+    );
+    setSalvando(false);
+    if (r.erro || !r.observacao) {
+      setErro(r.erro ?? "Não foi possível salvar a edição");
+      return;
+    }
+    onAtualizarObservacao(r.observacao);
+    setEditando(null);
+  }
+
+  function cancelarEdicao() {
+    if (!editando) return;
+    // fotos tiradas durante a edição e descartadas são apagadas
+    for (const fid of editando.novasFotos) void removerFotoAvaliacao(token, fid);
+    setEditando(null);
+    setErro(null);
+  }
+
   return (
     <div>
       {/* Feed na ordem de criação */}
       {feed.length > 0 && (
         <ul className="space-y-2">
-          {feed.map((o, i) => (
-            <li
-              key={o.id}
-              className="rounded-xl border border-slate-200 bg-white p-2.5"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Observação {i + 1}
-                </span>
-                {!o.id.startsWith("legado:") && (
-                  <button
-                    type="button"
-                    onClick={() => remover(o.id)}
-                    className="text-xs text-slate-400 underline active:text-red-600"
-                    aria-label="Remover observação"
-                  >
-                    remover
-                  </button>
-                )}
-              </div>
-              {o.texto && (
-                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
-                  {o.texto}
-                </p>
-              )}
-              {o.fotos.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {o.fotos.map((fid) => (
-                    <MiniaturaFoto key={fid} id={fid} token={token} />
-                  ))}
+          {feed.map((o, i) => {
+            const emEdicao = editando?.id === o.id;
+            const legado = o.id.startsWith("legado:");
+            return (
+              <li
+                key={o.id}
+                className={`rounded-xl border bg-white p-2.5 ${
+                  emEdicao ? "border-blue-300 ring-1 ring-blue-200" : "border-slate-200"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Observação {i + 1}
+                  </span>
+                  {!legado && !emEdicao && (
+                    <span className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditando({
+                            id: o.id,
+                            texto: o.texto ?? "",
+                            novasFotos: [],
+                          })
+                        }
+                        className="text-xs text-blue-600 underline active:text-blue-800"
+                        aria-label="Editar observação"
+                      >
+                        editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remover(o.id)}
+                        className="text-xs text-slate-400 underline active:text-red-600"
+                        aria-label="Remover observação"
+                      >
+                        remover
+                      </button>
+                    </span>
+                  )}
                 </div>
-              )}
-            </li>
-          ))}
+
+                {emEdicao ? (
+                  <div className="mt-1">
+                    <textarea
+                      value={editando.texto}
+                      onChange={(e) =>
+                        setEditando((ed) =>
+                          ed ? { ...ed, texto: e.target.value } : ed,
+                        )
+                      }
+                      rows={2}
+                      placeholder="Comentário desta observação…"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                    />
+                    {(o.fotos.length > 0 || editando.novasFotos.length > 0) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {o.fotos.map((fid) => (
+                          <MiniaturaFoto
+                            key={fid}
+                            id={fid}
+                            token={token}
+                            onExcluir={() => excluirFotoSalva(o, fid)}
+                          />
+                        ))}
+                        {editando.novasFotos.map((fid) => (
+                          <MiniaturaFoto
+                            key={fid}
+                            id={fid}
+                            token={token}
+                            onExcluir={() => excluirFotoEdicao(fid)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={enviandoFoto}
+                        onClick={() => pedirFoto("edicao")}
+                        className="flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-600 active:bg-slate-100 disabled:opacity-50"
+                      >
+                        {enviandoFoto ? "Enviando…" : "📷 Foto"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelarEdicao}
+                        disabled={salvando}
+                        className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-600 active:bg-slate-100 disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => salvarEdicao(o)}
+                        disabled={salvando}
+                        className="min-h-10 flex-1 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white active:bg-blue-700 disabled:opacity-40"
+                      >
+                        {salvando ? "Salvando…" : "Salvar"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {o.texto && (
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
+                        {o.texto}
+                      </p>
+                    )}
+                    {o.fotos.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {o.fotos.map((fid) => (
+                          <MiniaturaFoto
+                            key={fid}
+                            id={fid}
+                            token={token}
+                            onExcluir={
+                              legado ? undefined : () => excluirFotoSalva(o, fid)
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -288,7 +476,12 @@ function Observacoes({
         {rascunho.fotos.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
             {rascunho.fotos.map((fid) => (
-              <MiniaturaFoto key={fid} id={fid} token={token} />
+              <MiniaturaFoto
+                key={fid}
+                id={fid}
+                token={token}
+                onExcluir={() => excluirFotoRascunho(fid)}
+              />
             ))}
           </div>
         )}
@@ -296,7 +489,7 @@ function Observacoes({
           <button
             type="button"
             disabled={enviandoFoto}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => pedirFoto("composer")}
             className="flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-600 active:bg-slate-100 disabled:opacity-50"
           >
             {enviandoFoto ? "Enviando…" : "📷 Foto"}
@@ -786,6 +979,14 @@ export function AvaliacaoWizard({
                               [p.id]: [...(a[p.id] ?? []), obs],
                             }))
                           }
+                          onAtualizarObservacao={(obs) =>
+                            setObservacoes((a) => ({
+                              ...a,
+                              [p.id]: (a[p.id] ?? []).map((o) =>
+                                o.id === obs.id ? obs : o,
+                              ),
+                            }))
+                          }
                           onRemoverObservacao={(id) =>
                             setObservacoes((a) => ({
                               ...a,
@@ -841,6 +1042,14 @@ export function AvaliacaoWizard({
                           setObservacoes((a) => ({
                             ...a,
                             [p.id]: [...(a[p.id] ?? []), obs],
+                          }))
+                        }
+                        onAtualizarObservacao={(obs) =>
+                          setObservacoes((a) => ({
+                            ...a,
+                            [p.id]: (a[p.id] ?? []).map((o) =>
+                              o.id === obs.id ? obs : o,
+                            ),
                           }))
                         }
                         onRemoverObservacao={(id) =>

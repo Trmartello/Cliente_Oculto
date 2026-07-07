@@ -3,6 +3,8 @@ import "server-only";
 export interface StorageDriver {
   put(key: string, dados: Buffer, mimeType: string): Promise<void>;
   get(key: string): Promise<Buffer>;
+  /** Remove o arquivo; ausência não é erro (exclusão é melhor-esforço). */
+  delete(key: string): Promise<void>;
 }
 
 let driver: StorageDriver | null = null;

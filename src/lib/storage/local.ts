@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { StorageDriver } from "./index";
 
@@ -18,5 +18,9 @@ export class LocalDriver implements StorageDriver {
 
   async get(key: string): Promise<Buffer> {
     return readFile(this.caminho(key));
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(this.caminho(key), { force: true });
   }
 }

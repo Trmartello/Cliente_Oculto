@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { storage } from "@/lib/storage";
 import { validarToken } from "@/lib/token-avaliacao";
 import { calcularScore } from "@/domain/score/engine";
 import type {
@@ -168,9 +169,130 @@ export async function criarObservacao(
   };
 }
 
+/** Apaga arquivos no storage sem falhar a operação principal. */
+async function apagarArquivos(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  try {
+    const s = await storage();
+    await Promise.allSettled(keys.map((k) => s.delete(k)));
+  } catch {
+    // melhor-esforço: a linha no banco é a fonte de verdade
+  }
+}
+
 /**
- * Remove uma observação (e suas fotos, por cascade) enquanto a avaliação
- * ainda não foi enviada.
+ * Edita uma observação existente: atualiza o texto e/ou anexa fotos novas
+ * (já enviadas via /api/upload) à MESMA observação.
+ */
+export async function editarObservacao(
+  token: string,
+  observacaoId: string,
+  texto: string,
+  novasFotos: string[],
+): Promise<ObservacaoCriada> {
+  const validacao = await validarToken(token);
+  if (!validacao.ok) return { erro: "Link inválido ou expirado" };
+
+  const obs = await prisma.observacao.findUnique({
+    where: { id: observacaoId },
+    select: {
+      id: true,
+      resposta: { select: { visitaId: true } },
+      evidencias: { select: { id: true } },
+    },
+  });
+  if (!obs || obs.resposta.visitaId !== validacao.visitaId) {
+    return { erro: "Observação não encontrada" };
+  }
+
+  const textoLimpo = texto.trim();
+  if (!textoLimpo && obs.evidencias.length + novasFotos.length === 0) {
+    return { erro: "Escreva um comentário ou anexe uma foto" };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.observacao.update({
+      where: { id: observacaoId },
+      data: { texto: textoLimpo || null },
+    });
+    if (novasFotos.length > 0) {
+      await tx.evidencia.updateMany({
+        where: {
+          id: { in: novasFotos },
+          observacaoId: null,
+          resposta: { visitaId: validacao.visitaId },
+        },
+        data: { observacaoId },
+      });
+    }
+  });
+
+  const fotos = await prisma.evidencia.findMany({
+    where: { observacaoId },
+    orderBy: { criadoEm: "asc" },
+    select: { id: true },
+  });
+  return {
+    observacao: {
+      id: observacaoId,
+      texto: textoLimpo || null,
+      fotos: fotos.map((f) => f.id),
+    },
+  };
+}
+
+export interface FotoRemovida {
+  erro?: string;
+  ok?: boolean;
+  /** Preenchido quando a observação ficou vazia e foi removida junto. */
+  observacaoRemovida?: string;
+}
+
+/**
+ * Exclui UMA foto (do rascunho do composer ou de uma observação já salva).
+ * Se a observação ficar sem texto e sem fotos, ela é removida também.
+ */
+export async function removerFotoAvaliacao(
+  token: string,
+  evidenciaId: string,
+): Promise<FotoRemovida> {
+  const validacao = await validarToken(token);
+  if (!validacao.ok) return { erro: "Link inválido ou expirado" };
+
+  const evidencia = await prisma.evidencia.findUnique({
+    where: { id: evidenciaId },
+    select: {
+      id: true,
+      storageKey: true,
+      observacaoId: true,
+      resposta: { select: { visitaId: true } },
+    },
+  });
+  if (!evidencia || evidencia.resposta?.visitaId !== validacao.visitaId) {
+    return { erro: "Foto não encontrada" };
+  }
+
+  await prisma.evidencia.delete({ where: { id: evidenciaId } });
+  await apagarArquivos([evidencia.storageKey]);
+
+  // observação órfã (sem texto e sem outras fotos) sai junto
+  let observacaoRemovida: string | undefined;
+  if (evidencia.observacaoId) {
+    const obs = await prisma.observacao.findUnique({
+      where: { id: evidencia.observacaoId },
+      select: { id: true, texto: true, _count: { select: { evidencias: true } } },
+    });
+    if (obs && !obs.texto && obs._count.evidencias === 0) {
+      await prisma.observacao.delete({ where: { id: obs.id } });
+      observacaoRemovida = obs.id;
+    }
+  }
+  return { ok: true, observacaoRemovida };
+}
+
+/**
+ * Remove uma observação inteira (e suas fotos, inclusive os arquivos)
+ * enquanto a avaliação ainda não foi enviada.
  */
 export async function removerObservacao(
   token: string,
@@ -181,12 +303,17 @@ export async function removerObservacao(
 
   const obs = await prisma.observacao.findUnique({
     where: { id: observacaoId },
-    select: { id: true, resposta: { select: { visitaId: true } } },
+    select: {
+      id: true,
+      resposta: { select: { visitaId: true } },
+      evidencias: { select: { storageKey: true } },
+    },
   });
   if (!obs || obs.resposta.visitaId !== validacao.visitaId) {
     return { erro: "Observação não encontrada" };
   }
   await prisma.observacao.delete({ where: { id: observacaoId } });
+  await apagarArquivos(obs.evidencias.map((e) => e.storageKey));
   return { ok: true };
 }
 
