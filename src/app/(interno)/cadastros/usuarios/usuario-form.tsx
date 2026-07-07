@@ -3,7 +3,8 @@
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import { salvarUsuario, type ActionState } from "@/actions/cadastros";
-import { Card, btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { Modal } from "@/components/modal";
 
 interface UsuarioDados {
   id: string;
@@ -34,13 +35,19 @@ export function UsuarioForm({
     {},
   );
 
+  const [aberto, setAberto] = useState(!!usuario);
+
   return (
-    <details open={!!usuario} className="group">
-      <summary className={`${btnSecundario} cursor-pointer list-none`}>
+    <>
+      <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
         {usuario ? `Editando: ${usuario.nome}` : "+ Novo usuário"}
-      </summary>
-      <Card className="mt-3">
-        <form action={action} className="grid gap-4 md:grid-cols-3">
+      </button>
+      <Modal
+        aberto={aberto}
+        titulo={usuario ? `Editar usuário — ${usuario.nome}` : "Novo usuário"}
+        onFechar={() => setAberto(false)}
+      >
+        <form action={action} className="grid gap-4 sm:grid-cols-2">
           {usuario && <input type="hidden" name="id" value={usuario.id} />}
           <label className="block text-sm">
             <span className="font-medium text-slate-700">Nome *</span>
@@ -122,15 +129,18 @@ export function UsuarioForm({
             </label>
           )}
           {state.erro && (
-            <p className="text-sm text-red-600 md:col-span-3">{state.erro}</p>
+            <p className="text-sm text-red-600 sm:col-span-2">{state.erro}</p>
           )}
-          <div className="flex gap-2 md:col-span-3">
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 sm:col-span-2">
+            <button type="button" onClick={() => setAberto(false)} className={btnSecundario}>
+              Cancelar
+            </button>
             <button type="submit" disabled={pending} className={btnPrimario}>
               {pending ? "Salvando…" : "Salvar usuário"}
             </button>
           </div>
         </form>
-      </Card>
-    </details>
+      </Modal>
+    </>
   );
 }

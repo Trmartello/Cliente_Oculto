@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { criarQuestionario } from "@/actions/questionarios";
 import type { ActionState } from "@/actions/cadastros";
-import { Card, btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { Modal } from "@/components/modal";
 
 export function QuestionarioNovoForm() {
   const [state, action, pending] = useActionState<ActionState, FormData>(
@@ -11,13 +12,15 @@ export function QuestionarioNovoForm() {
     {},
   );
 
+  const [aberto, setAberto] = useState(false);
+
   return (
-    <details className="group">
-      <summary className={`${btnSecundario} cursor-pointer list-none`}>
+    <>
+      <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
         + Novo questionário
-      </summary>
-      <Card className="mt-3">
-        <form action={action} className="grid gap-4 md:grid-cols-2">
+      </button>
+      <Modal aberto={aberto} titulo="Novo questionário" onFechar={() => setAberto(false)}>
+        <form action={action} className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="font-medium text-slate-700">Nome *</span>
             <input name="nome" required className={`mt-1 ${inputCls}`} />
@@ -55,15 +58,18 @@ export function QuestionarioNovoForm() {
             />
           </label>
           {state.erro && (
-            <p className="text-sm text-red-600 md:col-span-2">{state.erro}</p>
+            <p className="text-sm text-red-600 sm:col-span-2">{state.erro}</p>
           )}
-          <div className="md:col-span-2">
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 sm:col-span-2">
+            <button type="button" onClick={() => setAberto(false)} className={btnSecundario}>
+              Cancelar
+            </button>
             <button type="submit" disabled={pending} className={btnPrimario}>
               {pending ? "Criando…" : "Criar e configurar blocos"}
             </button>
           </div>
         </form>
-      </Card>
-    </details>
+      </Modal>
+    </>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { redefinirDataVisita, type VisitaState } from "@/actions/visitas";
-import { btnSecundario, inputCls } from "@/components/ui";
+import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { Modal, useFecharAoSalvar } from "@/components/modal";
 
 /**
  * Reagenda a visita: altera a data prevista e, opcionalmente, estende a
@@ -18,17 +19,25 @@ export function EditarVisitaForm({
   dataAtual: string; // yyyy-mm-dd
   linkAtivo: boolean;
 }) {
+  const [aberto, setAberto] = useState(false);
   const [state, action, pending] = useActionState<VisitaState, FormData>(
     redefinirDataVisita,
     {},
   );
+  useFecharAoSalvar(state.ok, () => setAberto(false));
 
   return (
-    <details className="group">
-      <summary className={`${btnSecundario} cursor-pointer list-none`}>
+    <>
+      <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
         Reagendar / redefinir data
-      </summary>
-      <form action={action} className="mt-3 flex flex-wrap items-end gap-3">
+      </button>
+      <Modal
+        aberto={aberto}
+        titulo="Reagendar visita"
+        onFechar={() => setAberto(false)}
+        largura="max-w-lg"
+      >
+      <form action={action} className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="visitaId" value={visitaId} />
         <label className="block text-sm">
           <span className="font-medium text-slate-700">Nova data prevista</span>
@@ -55,20 +64,12 @@ export function EditarVisitaForm({
             />
           </label>
         )}
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={pending} className={btnPrimario}>
           {pending ? "Salvando…" : "Salvar nova data"}
         </button>
         {state.erro && <p className="w-full text-sm text-red-600">{state.erro}</p>}
-        {state.ok && (
-          <p className="w-full text-sm text-emerald-700">
-            Data atualizada com sucesso.
-          </p>
-        )}
       </form>
-    </details>
+      </Modal>
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { atualizarNC, criarAcao } from "@/actions/ncs";
 import type { ActionState } from "@/actions/cadastros";
 import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { Modal, useFecharAoSalvar } from "@/components/modal";
 
 export function NcEditarForm({
   nc,
@@ -101,23 +102,30 @@ export function AcaoNovaForm({
   naoConformidadeId: string;
   usuarios: { id: string; nome: string }[];
 }) {
+  const [aberto, setAberto] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     criarAcao,
     {},
   );
+  useFecharAoSalvar(state.ok, () => setAberto(false));
 
   return (
-    <details>
-      <summary className={`${btnSecundario} cursor-pointer list-none`}>
+    <>
+      <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
         + Nova ação corretiva
-      </summary>
-      <form action={action} className="mt-3 grid gap-4 md:grid-cols-4">
+      </button>
+      <Modal
+        aberto={aberto}
+        titulo="Nova ação corretiva"
+        onFechar={() => setAberto(false)}
+      >
+      <form action={action} className="grid gap-4 sm:grid-cols-3">
         <input
           type="hidden"
           name="naoConformidadeId"
           value={naoConformidadeId}
         />
-        <label className="block text-sm md:col-span-4">
+        <label className="block text-sm sm:col-span-3">
           <span className="font-medium text-slate-700">Ação corretiva *</span>
           <input
             name="descricao"
@@ -154,16 +162,20 @@ export function AcaoNovaForm({
             <option value="URGENTE">Urgente</option>
           </select>
         </label>
-        <div className="flex items-end">
+        {state.erro && (
+          <p className="text-sm text-red-600 sm:col-span-3">{state.erro}</p>
+        )}
+        <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 sm:col-span-3">
+          <button type="button" onClick={() => setAberto(false)} className={btnSecundario}>
+            Cancelar
+          </button>
           <button type="submit" disabled={pending} className={btnPrimario}>
             {pending ? "Criando…" : "Adicionar ação"}
           </button>
         </div>
-        {state.erro && (
-          <p className="text-sm text-red-600 md:col-span-4">{state.erro}</p>
-        )}
       </form>
-    </details>
+      </Modal>
+    </>
   );
 }
 

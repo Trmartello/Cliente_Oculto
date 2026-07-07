@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { salvarMeta, type ActionState } from "@/actions/cadastros";
-import { Card, btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
+import { Modal, useFecharAoSalvar } from "@/components/modal";
 
 export function MetaForm({
   postos,
@@ -11,18 +12,20 @@ export function MetaForm({
   postos: { id: string; nome: string }[];
   blocos: string[];
 }) {
+  const [aberto, setAberto] = useState(false);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     salvarMeta,
     {},
   );
+  useFecharAoSalvar(state.ok, () => setAberto(false));
 
   return (
-    <details className="group">
-      <summary className={`${btnSecundario} cursor-pointer list-none`}>
+    <>
+      <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
         + Nova meta
-      </summary>
-      <Card className="mt-3">
-        <form action={action} className="grid gap-4 md:grid-cols-5">
+      </button>
+      <Modal aberto={aberto} titulo="Nova meta de score" onFechar={() => setAberto(false)}>
+        <form action={action} className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="font-medium text-slate-700">Abrangência</span>
             <select name="postoId" className={`mt-1 ${inputCls}`}>
@@ -67,15 +70,18 @@ export function MetaForm({
             <input name="vigenciaFim" type="date" className={`mt-1 ${inputCls}`} />
           </label>
           {state.erro && (
-            <p className="text-sm text-red-600 md:col-span-5">{state.erro}</p>
+            <p className="text-sm text-red-600 sm:col-span-2">{state.erro}</p>
           )}
-          <div className="md:col-span-5">
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 sm:col-span-2">
+            <button type="button" onClick={() => setAberto(false)} className={btnSecundario}>
+              Cancelar
+            </button>
             <button type="submit" disabled={pending} className={btnPrimario}>
               {pending ? "Salvando…" : "Salvar meta"}
             </button>
           </div>
         </form>
-      </Card>
-    </details>
+      </Modal>
+    </>
   );
 }
