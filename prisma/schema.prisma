@@ -123,9 +123,10 @@ model Posto {
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
-  visitas  Visita[]
-  metas    Meta[]
-  usuarios Usuario[]
+  visitas      Visita[]
+  metas        Meta[]
+  usuarios     Usuario[]
+  pesquisasNps PesquisaNps[]
 }
 
 model Usuario {
@@ -303,6 +304,34 @@ model Resposta {
   observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// ============ PESQUISA NPS ============
+// Link público permanente por posto (QR no balcão/bomba): o cliente real
+// responde de 0 a 10 + comentário, sem login.
+model PesquisaNps {
+  id       String  @id @default(cuid())
+  postoId  String
+  token    String  @unique // slug público do link
+  ativo    Boolean @default(true)
+
+  criadoEm DateTime @default(now())
+
+  posto     Posto         @relation(fields: [postoId], references: [id])
+  respostas RespostaNps[]
+}
+
+model RespostaNps {
+  id         String  @id @default(cuid())
+  pesquisaId String
+  nota       Int // 0-10
+  comentario String? @db.Text
+
+  criadoEm DateTime @default(now())
+
+  pesquisa PesquisaNps @relation(fields: [pesquisaId], references: [id], onDelete: Cascade)
+
+  @@index([pesquisaId, criadoEm])
 }
 
 // Ciclo/campanha de avaliação (ex.: "2º semestre 2026") — agrupa visitas

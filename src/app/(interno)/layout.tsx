@@ -23,6 +23,7 @@ export default async function InternoLayout({
     { href: "/dashboard", rotulo: "Dashboard" },
     { href: "/visitas", rotulo: "Visitas" },
     { href: "/nao-conformidades", rotulo: "Não Conformidades" },
+    ...(admin ? [{ href: "/nps", rotulo: "NPS" }] : []),
     ...(admin
       ? [
           { href: "/cadastros/postos", rotulo: "Postos" },

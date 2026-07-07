@@ -49,6 +49,8 @@ prisma/questionario-oficial.ts  roteiro oficial da rede (idempotente por nome)
 src/domain/score/             motor puro: engine.ts, igeo.ts, tipos.ts + *.test.ts
 src/lib/
   prisma.ts        singleton PrismaClient
+  auditoria.ts     registrarAuditoria() — trilha "quem alterou o quê"; nunca derruba a operação
+  email.ts         SMTP opcional (SMTP_*); sem config vira no-op logado
   auth.ts          sessão JWT (jose) em cookie; exigirSessao/exigirPapel; "server-only"
   rbac.ts          papéis + escopoVisita/escopoNC/escopoPosto (NÃO é server-only; ok no client)
   token-avaliacao.ts  gera/valida token; baseUrlPublica() monta o link público; "server-only"
@@ -56,8 +58,10 @@ src/lib/
   dashboard.ts     carregarDashboard() — agrega snapshots com RBAC; "server-only"
   csv.ts / formato.ts  exportação CSV (Excel pt-BR) e rótulos/cores
 src/actions/       server actions: auth, cadastros, questionarios, visitas, avaliacao, ncs
-src/app/(publico)/ login e fluxo mobile /avaliar/[token] (wizard) + /avaliar/enviado
-src/app/(interno)/ dashboard, visitas, nao-conformidades, cadastros/*, relatorios
+src/app/(publico)/ login, fluxo mobile /avaliar/[token] (wizard) e pesquisa /nps/[token]
+src/app/(interno)/ dashboard (abas CO×Auditoria), visitas (+imprimir), nps,
+                   nao-conformidades, cadastros/* (postos, questionarios,
+                   avaliadores, ciclos, usuarios, metas, auditoria), relatorios
 src/app/api/       upload e leitura de evidências, exportações CSV
 src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
 ```

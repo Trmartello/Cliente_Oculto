@@ -156,6 +156,6 @@ src/app/api/          upload/leitura de evidências e exportações CSV
 
 ## Roadmap (fases futuras)
 
-- Pesquisa NPS, Auditoria Operacional e dashboard com IA (correlações e
-  recomendações automáticas) sobre a mesma base.
-- Evidências em vídeo/áudio, relatórios em PDF, criação manual de NCs.
+- Dashboard com IA (correlações e recomendações automáticas) sobre a mesma
+  base.
+- Evidências em vídeo/áudio e criação manual de NCs.
