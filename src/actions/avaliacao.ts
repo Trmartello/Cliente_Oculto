@@ -55,30 +55,89 @@ export async function salvarRascunho(
   return { ok: true };
 }
 
+export interface ObservacaoCriada {
+  erro?: string;
+  observacao?: { id: string; texto: string | null; fotos: string[] };
+}
+
 /**
- * Salva a legenda/comentário de uma foto específica (chamado pelo wizard ao
- * sair do campo). Confere que a evidência pertence à visita do token.
+ * Cria uma OBSERVAÇÃO no feed do item: texto e/ou fotos (que já foram
+ * enviadas via /api/upload e são vinculadas aqui). A ordem de exibição é a
+ * ordem de criação. Confere que tudo pertence à visita do token.
  */
-export async function salvarLegendaEvidencia(
+export async function criarObservacao(
   token: string,
-  evidenciaId: string,
-  legenda: string,
+  perguntaId: string,
+  texto: string,
+  evidenciaIds: string[],
+): Promise<ObservacaoCriada> {
+  const validacao = await validarToken(token);
+  if (!validacao.ok) return { erro: "Link inválido ou expirado" };
+
+  const textoLimpo = texto.trim();
+  if (!textoLimpo && evidenciaIds.length === 0) {
+    return { erro: "Escreva um comentário ou anexe uma foto" };
+  }
+
+  const resposta = await prisma.resposta.upsert({
+    where: {
+      visitaId_perguntaId: { visitaId: validacao.visitaId, perguntaId },
+    },
+    update: {},
+    create: { visitaId: validacao.visitaId, perguntaId },
+  });
+
+  const observacao = await prisma.$transaction(async (tx) => {
+    const obs = await tx.observacao.create({
+      data: { respostaId: resposta.id, texto: textoLimpo || null },
+    });
+    if (evidenciaIds.length > 0) {
+      // vincula apenas fotos desta mesma visita, ainda sem observação
+      await tx.evidencia.updateMany({
+        where: {
+          id: { in: evidenciaIds },
+          observacaoId: null,
+          resposta: { visitaId: validacao.visitaId },
+        },
+        data: { observacaoId: obs.id },
+      });
+    }
+    return obs;
+  });
+
+  const fotos = await prisma.evidencia.findMany({
+    where: { observacaoId: observacao.id },
+    orderBy: { criadoEm: "asc" },
+    select: { id: true },
+  });
+  return {
+    observacao: {
+      id: observacao.id,
+      texto: observacao.texto,
+      fotos: fotos.map((f) => f.id),
+    },
+  };
+}
+
+/**
+ * Remove uma observação (e suas fotos, por cascade) enquanto a avaliação
+ * ainda não foi enviada.
+ */
+export async function removerObservacao(
+  token: string,
+  observacaoId: string,
 ): Promise<AvaliacaoState> {
   const validacao = await validarToken(token);
   if (!validacao.ok) return { erro: "Link inválido ou expirado" };
 
-  const evidencia = await prisma.evidencia.findUnique({
-    where: { id: evidenciaId },
+  const obs = await prisma.observacao.findUnique({
+    where: { id: observacaoId },
     select: { id: true, resposta: { select: { visitaId: true } } },
   });
-  if (!evidencia || evidencia.resposta?.visitaId !== validacao.visitaId) {
-    return { erro: "Foto não encontrada" };
+  if (!obs || obs.resposta.visitaId !== validacao.visitaId) {
+    return { erro: "Observação não encontrada" };
   }
-
-  await prisma.evidencia.update({
-    where: { id: evidenciaId },
-    data: { legenda: legenda.trim() || null },
-  });
+  await prisma.observacao.delete({ where: { id: observacaoId } });
   return { ok: true };
 }
 

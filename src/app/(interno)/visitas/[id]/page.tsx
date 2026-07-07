@@ -99,7 +99,19 @@ export default async function VisitaDetalhePage({
         },
       },
       token: true,
-      respostas: { include: { evidencias: true } },
+      respostas: {
+        include: {
+          observacoes: {
+            orderBy: { criadoEm: "asc" },
+            include: { evidencias: { orderBy: { criadoEm: "asc" } } },
+          },
+          // fotos do modelo anterior, sem observação
+          evidencias: {
+            where: { observacaoId: null },
+            orderBy: { criadoEm: "asc" },
+          },
+        },
+      },
       naoConformidades: true,
     },
   });
@@ -337,6 +349,37 @@ export default async function VisitaDetalhePage({
                               “{r.comentario}”
                             </p>
                           )}
+                          {/* Feed de observações, na ordem de criação */}
+                          {r && r.observacoes.length > 0 && (
+                            <ul className="mt-2 space-y-2">
+                              {r.observacoes.map((o) => (
+                                <li
+                                  key={o.id}
+                                  className="rounded-lg border border-slate-100 bg-slate-50 p-2"
+                                >
+                                  {o.texto && (
+                                    <p className="whitespace-pre-wrap text-xs italic text-slate-600">
+                                      “{o.texto}”
+                                    </p>
+                                  )}
+                                  {o.evidencias.length > 0 && (
+                                    <div className={`flex flex-wrap gap-2 ${o.texto ? "mt-1.5" : ""}`}>
+                                      {o.evidencias.map((e) => (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          key={e.id}
+                                          src={`/api/evidencia/${e.id}`}
+                                          alt={o.texto ?? "Evidência fotográfica"}
+                                          className="h-24 w-24 rounded-lg border border-slate-200 object-cover"
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {/* Fotos do modelo anterior (sem observação) */}
                           {r && r.evidencias.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-3">
                               {r.evidencias.map((e) => (

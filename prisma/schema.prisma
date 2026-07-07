@@ -278,27 +278,45 @@ model Resposta {
 
   atualizadoEm DateTime @updatedAt
 
-  visita     Visita      @relation(fields: [visitaId], references: [id], onDelete: Cascade)
-  pergunta   Pergunta    @relation(fields: [perguntaId], references: [id])
-  evidencias Evidencia[]
+  visita      Visita       @relation(fields: [visitaId], references: [id], onDelete: Cascade)
+  pergunta    Pergunta     @relation(fields: [perguntaId], references: [id])
+  evidencias  Evidencia[]
+  observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// Feed de observações do avaliador por item: cada entrada pode ter só texto,
+// texto + uma ou mais fotos, ou só foto — exibidas na ordem de criação.
+model Observacao {
+  id         String  @id @default(cuid())
+  respostaId String
+  texto      String? @db.Text
+
+  criadoEm DateTime @default(now())
+
+  resposta   Resposta    @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  evidencias Evidencia[]
+
+  @@index([respostaId, criadoEm])
 }
 
 model Evidencia {
   id           String        @id @default(cuid())
   respostaId   String? // evidência de resposta do avaliador
   acaoId       String? // OU foto da correção de um plano de ação
+  observacaoId String? // foto pertencente a uma observação do feed
   tipo         TipoEvidencia @default(FOTO)
-  legenda      String?       @db.Text // comentário/legenda da foto (opcional)
+  legenda      String?       @db.Text // legado: legenda avulsa da foto
   storageKey   String
   mimeType     String
   tamanhoBytes Int
 
   criadoEm DateTime @default(now())
 
-  resposta Resposta? @relation(fields: [respostaId], references: [id], onDelete: Cascade)
-  acao     Acao?     @relation(fields: [acaoId], references: [id], onDelete: Cascade)
+  resposta   Resposta?   @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  acao       Acao?       @relation(fields: [acaoId], references: [id], onDelete: Cascade)
+  observacao Observacao? @relation(fields: [observacaoId], references: [id], onDelete: Cascade)
 }
 
 // ============ NÃO CONFORMIDADES / PLANO DE AÇÃO ============

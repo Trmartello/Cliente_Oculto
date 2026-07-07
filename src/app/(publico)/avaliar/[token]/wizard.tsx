@@ -2,8 +2,9 @@
 
 import { useRef, useState, useTransition } from "react";
 import {
+  criarObservacao,
   enviarAvaliacao,
-  salvarLegendaEvidencia,
+  removerObservacao,
   salvarRascunho,
   type RespostaRascunho,
 } from "@/actions/avaliacao";
@@ -25,11 +26,20 @@ interface BlocoW {
 type RespostaLocal = {
   valor: string | null;
   naoSeAplica: boolean;
-  comentario: string | null;
+  comentario: string | null; // legado — o feed de observações substitui
 };
 
-/** Foto enviada + sua legenda (comentário da foto). */
-type FotoLocal = { id: string; legenda: string | null };
+/** Entrada do feed: texto e/ou fotos, na ordem em que foi criada. */
+export type ObservacaoLocal = {
+  id: string;
+  texto: string | null;
+  fotos: string[]; // ids de evidência
+};
+
+/** Rascunho do composer (ainda não virou observação). */
+type RascunhoObs = { texto: string; fotos: string[] };
+
+const RASCUNHO_VAZIO: RascunhoObs = { texto: "", fotos: [] };
 
 // Recomprime a foto no aparelho antes do upload (essencial em 4G).
 async function comprimirImagem(arquivo: File): Promise<Blob> {
@@ -132,25 +142,46 @@ function Estrelas({
   );
 }
 
-function FotoUpload({
+function MiniaturaFoto({ id, token }: { id: string; token: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/api/evidencia/${id}?token=${encodeURIComponent(token)}`}
+      alt="Foto enviada"
+      className="h-16 w-16 rounded-lg border border-slate-200 object-cover"
+    />
+  );
+}
+
+/**
+ * Feed de observações do item + composer.
+ * Cada observação pode ter só texto, texto com uma ou mais fotos, ou só
+ * foto — e a lista preserva a ordem de criação.
+ */
+function Observacoes({
   token,
   perguntaId,
-  fotos,
-  onNovaFoto,
-  onLegenda,
+  feed,
+  rascunho,
+  onRascunho,
+  onNovaObservacao,
+  onRemoverObservacao,
 }: {
   token: string;
   perguntaId: string;
-  fotos: FotoLocal[];
-  onNovaFoto: (id: string) => void;
-  onLegenda: (id: string, legenda: string) => void;
+  feed: ObservacaoLocal[];
+  rascunho: RascunhoObs;
+  onRascunho: (r: RascunhoObs) => void;
+  onNovaObservacao: (obs: ObservacaoLocal) => void;
+  onRemoverObservacao: (id: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [enviando, setEnviando] = useState(false);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  async function enviar(arquivo: File) {
-    setEnviando(true);
+  async function subirFoto(arquivo: File) {
+    setEnviandoFoto(true);
     setErro(null);
     try {
       const blob = await comprimirImagem(arquivo);
@@ -161,49 +192,119 @@ function FotoUpload({
       const resp = await fetch("/api/upload", { method: "POST", body: fd });
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.erro ?? "Falha no envio");
-      onNovaFoto(json.id);
+      onRascunho({ ...rascunho, fotos: [...rascunho.fotos, json.id] });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha no envio da foto");
     } finally {
-      setEnviando(false);
+      setEnviandoFoto(false);
       if (inputRef.current) inputRef.current.value = "";
     }
   }
 
+  async function adicionar() {
+    if (!rascunho.texto.trim() && rascunho.fotos.length === 0) return;
+    setSalvando(true);
+    setErro(null);
+    const r = await criarObservacao(
+      token,
+      perguntaId,
+      rascunho.texto,
+      rascunho.fotos,
+    );
+    setSalvando(false);
+    if (r.erro || !r.observacao) {
+      setErro(r.erro ?? "Não foi possível salvar");
+      return;
+    }
+    onNovaObservacao(r.observacao);
+    onRascunho(RASCUNHO_VAZIO);
+  }
+
+  async function remover(id: string) {
+    onRemoverObservacao(id); // otimista
+    await removerObservacao(token, id);
+  }
+
   return (
-    <div className="mt-2">
-      {/* Cada foto com um campo de legenda/comentário logo abaixo */}
-      {fotos.length > 0 && (
-        <ul className="mb-2 space-y-2">
-          {fotos.map((f) => (
-            <li key={f.id} className="flex items-start gap-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/api/evidencia/${f.id}?token=${encodeURIComponent(token)}`}
-                alt="Foto enviada"
-                className="h-16 w-16 shrink-0 rounded-lg border border-slate-200 object-cover"
-              />
-              <input
-                type="text"
-                defaultValue={f.legenda ?? ""}
-                onBlur={(e) => onLegenda(f.id, e.target.value)}
-                placeholder="Comentário desta foto (opcional)"
-                className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-              />
+    <div>
+      {/* Feed na ordem de criação */}
+      {feed.length > 0 && (
+        <ul className="space-y-2">
+          {feed.map((o, i) => (
+            <li
+              key={o.id}
+              className="rounded-xl border border-slate-200 bg-white p-2.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Observação {i + 1}
+                </span>
+                {!o.id.startsWith("legado:") && (
+                  <button
+                    type="button"
+                    onClick={() => remover(o.id)}
+                    className="text-xs text-slate-400 underline active:text-red-600"
+                    aria-label="Remover observação"
+                  >
+                    remover
+                  </button>
+                )}
+              </div>
+              {o.texto && (
+                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
+                  {o.texto}
+                </p>
+              )}
+              {o.fotos.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {o.fotos.map((fid) => (
+                    <MiniaturaFoto key={fid} id={fid} token={token} />
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        disabled={enviando}
-        onClick={() => inputRef.current?.click()}
-        className="flex min-h-11 items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 text-sm font-medium text-slate-600 active:bg-slate-100 disabled:opacity-50"
-        aria-label="Adicionar foto"
-      >
-        {enviando ? "Enviando foto…" : "📷 Adicionar foto"}
-      </button>
-      {erro && <p className="mt-1 text-xs text-red-600">{erro}</p>}
+
+      {/* Composer: novo comentário e/ou fotos */}
+      <div className={`${feed.length > 0 ? "mt-2" : ""} rounded-xl border border-dashed border-slate-300 bg-white p-2.5`}>
+        <textarea
+          value={rascunho.texto}
+          onChange={(e) => onRascunho({ ...rascunho, texto: e.target.value })}
+          rows={2}
+          placeholder="Escreva um comentário (opcional se anexar foto)…"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+        />
+        {rascunho.fotos.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {rascunho.fotos.map((fid) => (
+              <MiniaturaFoto key={fid} id={fid} token={token} />
+            ))}
+          </div>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            type="button"
+            disabled={enviandoFoto}
+            onClick={() => inputRef.current?.click()}
+            className="flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-600 active:bg-slate-100 disabled:opacity-50"
+          >
+            {enviandoFoto ? "Enviando…" : "📷 Foto"}
+          </button>
+          <button
+            type="button"
+            disabled={
+              salvando || (!rascunho.texto.trim() && rascunho.fotos.length === 0)
+            }
+            onClick={adicionar}
+            className="min-h-10 flex-1 rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white active:bg-blue-700 disabled:opacity-40"
+          >
+            {salvando ? "Salvando…" : "Adicionar observação"}
+          </button>
+        </div>
+        {erro && <p className="mt-1 text-xs text-red-600">{erro}</p>}
+      </div>
       <input
         ref={inputRef}
         type="file"
@@ -212,53 +313,24 @@ function FotoUpload({
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) enviar(f);
+          if (f) subirFoto(f);
         }}
       />
     </div>
   );
 }
 
-/** Campo de comentário do item (independe de foto — pode ir sozinho). */
-function ComentarioItem({
-  comentario,
-  onComentario,
+/** Área expansível de observações sob cada item avaliado. */
+function AreaObservacoes({
+  sempreAberto = false,
+  temConteudo,
+  children,
 }: {
-  comentario: string | null;
-  onComentario: (texto: string) => void;
+  sempreAberto?: boolean;
+  temConteudo: boolean;
+  children: React.ReactNode;
 }) {
-  return (
-    <textarea
-      value={comentario ?? ""}
-      onChange={(e) => onComentario(e.target.value)}
-      rows={2}
-      placeholder="Comentário (opcional)"
-      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-    />
-  );
-}
-
-// Área expansível: comentário do item + fotos (cada foto com sua legenda).
-function ComentarioFoto({
-  token,
-  perguntaId,
-  comentario,
-  fotos,
-  onComentario,
-  onNovaFoto,
-  onLegenda,
-}: {
-  token: string;
-  perguntaId: string;
-  comentario: string | null;
-  fotos: FotoLocal[];
-  onComentario: (texto: string) => void;
-  onNovaFoto: (id: string) => void;
-  onLegenda: (id: string, legenda: string) => void;
-}) {
-  const [aberto, setAberto] = useState(
-    Boolean(comentario) || fotos.length > 0,
-  );
+  const [aberto, setAberto] = useState(sempreAberto || temConteudo);
 
   if (!aberto) {
     return (
@@ -274,19 +346,10 @@ function ComentarioFoto({
 
   return (
     <div className="mt-3 rounded-xl bg-slate-50 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Comentário e fotos deste item
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Comentários e fotos deste item
       </p>
-      <div className="mt-2">
-        <ComentarioItem comentario={comentario} onComentario={onComentario} />
-      </div>
-      <FotoUpload
-        token={token}
-        perguntaId={perguntaId}
-        fotos={fotos}
-        onNovaFoto={onNovaFoto}
-        onLegenda={onLegenda}
-      />
+      {children}
     </div>
   );
 }
@@ -296,21 +359,22 @@ export function AvaliacaoWizard({
   posto,
   blocos,
   respostasIniciais,
-  evidenciasIniciais,
+  observacoesIniciais,
 }: {
   token: string;
   posto: string;
   blocos: BlocoW[];
   respostasIniciais: Record<string, RespostaLocal>;
-  evidenciasIniciais: Record<string, FotoLocal[]>;
+  observacoesIniciais: Record<string, ObservacaoLocal[]>;
 }) {
   const [passo, setPasso] = useState(0); // blocos.length = revisão
   const [respostas, setRespostas] = useState<Record<string, RespostaLocal>>(
     respostasIniciais,
   );
-  const [fotos, setFotos] = useState<Record<string, FotoLocal[]>>(
-    evidenciasIniciais,
-  );
+  const [observacoes, setObservacoes] = useState<
+    Record<string, ObservacaoLocal[]>
+  >(observacoesIniciais);
+  const [rascunhos, setRascunhos] = useState<Record<string, RascunhoObs>>({});
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, startTransition] = useTransition();
 
@@ -324,8 +388,19 @@ export function AvaliacaoWizard({
     );
   }
 
-  function fotosDe(perguntaId: string): FotoLocal[] {
-    return fotos[perguntaId] ?? [];
+  function feedDe(perguntaId: string): ObservacaoLocal[] {
+    return observacoes[perguntaId] ?? [];
+  }
+
+  function rascunhoDe(perguntaId: string): RascunhoObs {
+    return rascunhos[perguntaId] ?? RASCUNHO_VAZIO;
+  }
+
+  function totalFotos(perguntaId: string): number {
+    return (
+      feedDe(perguntaId).reduce((s, o) => s + o.fotos.length, 0) +
+      rascunhoDe(perguntaId).fotos.length
+    );
   }
 
   function atualizar(perguntaId: string, mudanca: Partial<RespostaLocal>) {
@@ -336,28 +411,10 @@ export function AvaliacaoWizard({
     setErro(null);
   }
 
-  function adicionarFoto(perguntaId: string, id: string) {
-    setFotos((atual) => ({
-      ...atual,
-      [perguntaId]: [...(atual[perguntaId] ?? []), { id, legenda: null }],
-    }));
-  }
-
-  function definirLegenda(perguntaId: string, id: string, legenda: string) {
-    setFotos((atual) => ({
-      ...atual,
-      [perguntaId]: (atual[perguntaId] ?? []).map((f) =>
-        f.id === id ? { ...f, legenda } : f,
-      ),
-    }));
-    // persiste sem bloquear a UI
-    void salvarLegendaEvidencia(token, id, legenda);
-  }
-
   function pendentesDo(b: BlocoW): PerguntaW[] {
     return b.perguntas.filter((p) => {
       if (!p.obrigatoria || p.tipo === "TEXTO") return false;
-      if (p.tipo === "FOTO") return fotosDe(p.id).length === 0;
+      if (p.tipo === "FOTO") return totalFotos(p.id) === 0;
       const r = respostaDe(p.id);
       return !r.naoSeAplica && (r.valor === null || r.valor === "");
     });
@@ -375,6 +432,23 @@ export function AvaliacaoWizard({
     });
   }
 
+  /** Converte em observação qualquer rascunho de composer não vazio. */
+  async function comitarRascunhos(perguntas: PerguntaW[]) {
+    for (const p of perguntas) {
+      const r = rascunhoDe(p.id);
+      if (!r.texto.trim() && r.fotos.length === 0) continue;
+      const res = await criarObservacao(token, p.id, r.texto, r.fotos);
+      if (res.observacao) {
+        const obs = res.observacao;
+        setObservacoes((atual) => ({
+          ...atual,
+          [p.id]: [...(atual[p.id] ?? []), obs],
+        }));
+        setRascunhos((atual) => ({ ...atual, [p.id]: RASCUNHO_VAZIO }));
+      }
+    }
+  }
+
   function avancar() {
     if (!bloco) return;
     const pendentes = pendentesDo(bloco);
@@ -384,6 +458,7 @@ export function AvaliacaoWizard({
       return;
     }
     startTransition(async () => {
+      await comitarRascunhos(bloco.perguntas); // observações esquecidas no composer
       await salvarRascunho(token, rascunhoDo(bloco)); // autosave
       setPasso((p) => p + 1);
       window.scrollTo({ top: 0 });
@@ -398,6 +473,7 @@ export function AvaliacaoWizard({
 
   function enviar() {
     startTransition(async () => {
+      await comitarRascunhos(blocos.flatMap((b) => b.perguntas));
       const todas = blocos.flatMap((b) => rascunhoDo(b));
       const r = await enviarAvaliacao(token, todas);
       if (r?.erro) {
@@ -439,6 +515,8 @@ export function AvaliacaoWizard({
         <div className="space-y-4">
           {bloco.perguntas.map((p, idx) => {
             const r = respostaDe(p.id);
+            const feed = feedDe(p.id);
+            const rasc = rascunhoDe(p.id);
             return (
               <div
                 key={p.id}
@@ -531,26 +609,27 @@ export function AvaliacaoWizard({
                       />
                     )}
                     {p.tipo === "FOTO" && (
-                      <div>
-                        <FotoUpload
-                          token={token}
-                          perguntaId={p.id}
-                          fotos={fotosDe(p.id)}
-                          onNovaFoto={(id) => adicionarFoto(p.id, id)}
-                          onLegenda={(id, legenda) =>
-                            definirLegenda(p.id, id, legenda)
-                          }
-                        />
-                        {/* comentário avulso do item, mesmo em pergunta de foto */}
-                        <div className="mt-3">
-                          <ComentarioItem
-                            comentario={r.comentario}
-                            onComentario={(texto) =>
-                              atualizar(p.id, { comentario: texto })
-                            }
-                          />
-                        </div>
-                      </div>
+                      <Observacoes
+                        token={token}
+                        perguntaId={p.id}
+                        feed={feed}
+                        rascunho={rasc}
+                        onRascunho={(nr) =>
+                          setRascunhos((a) => ({ ...a, [p.id]: nr }))
+                        }
+                        onNovaObservacao={(obs) =>
+                          setObservacoes((a) => ({
+                            ...a,
+                            [p.id]: [...(a[p.id] ?? []), obs],
+                          }))
+                        }
+                        onRemoverObservacao={(id) =>
+                          setObservacoes((a) => ({
+                            ...a,
+                            [p.id]: (a[p.id] ?? []).filter((o) => o.id !== id),
+                          }))
+                        }
+                      />
                     )}
                   </div>
                 )}
@@ -573,19 +652,42 @@ export function AvaliacaoWizard({
                 )}
 
                 {p.tipo !== "FOTO" && p.tipo !== "TEXTO" && !r.naoSeAplica && (
-                  <ComentarioFoto
-                    token={token}
-                    perguntaId={p.id}
-                    comentario={r.comentario}
-                    fotos={fotosDe(p.id)}
-                    onComentario={(texto) =>
-                      atualizar(p.id, { comentario: texto })
+                  <AreaObservacoes
+                    temConteudo={
+                      feed.length > 0 ||
+                      Boolean(rasc.texto) ||
+                      rasc.fotos.length > 0 ||
+                      Boolean(r.comentario)
                     }
-                    onNovaFoto={(id) => adicionarFoto(p.id, id)}
-                    onLegenda={(id, legenda) =>
-                      definirLegenda(p.id, id, legenda)
-                    }
-                  />
+                  >
+                    {/* comentário antigo (modelo anterior), somente leitura */}
+                    {r.comentario && (
+                      <p className="mb-2 rounded-lg bg-white px-3 py-2 text-sm italic text-slate-600">
+                        “{r.comentario}”
+                      </p>
+                    )}
+                    <Observacoes
+                      token={token}
+                      perguntaId={p.id}
+                      feed={feed}
+                      rascunho={rasc}
+                      onRascunho={(nr) =>
+                        setRascunhos((a) => ({ ...a, [p.id]: nr }))
+                      }
+                      onNovaObservacao={(obs) =>
+                        setObservacoes((a) => ({
+                          ...a,
+                          [p.id]: [...(a[p.id] ?? []), obs],
+                        }))
+                      }
+                      onRemoverObservacao={(id) =>
+                        setObservacoes((a) => ({
+                          ...a,
+                          [p.id]: (a[p.id] ?? []).filter((o) => o.id !== id),
+                        }))
+                      }
+                    />
+                  </AreaObservacoes>
                 )}
               </div>
             );
@@ -607,7 +709,7 @@ export function AvaliacaoWizard({
               return (
                 r.naoSeAplica ||
                 (r.valor !== null && r.valor !== "") ||
-                (p.tipo === "FOTO" && fotosDe(p.id).length > 0)
+                (p.tipo === "FOTO" && totalFotos(p.id) > 0)
               );
             }).length;
             return (

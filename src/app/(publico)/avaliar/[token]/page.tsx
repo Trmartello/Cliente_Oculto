@@ -56,7 +56,21 @@ export default async function AvaliarPage({
         },
       },
       respostas: {
-        include: { evidencias: { select: { id: true, legenda: true } } },
+        include: {
+          observacoes: {
+            orderBy: { criadoEm: "asc" },
+            include: {
+              evidencias: { orderBy: { criadoEm: "asc" }, select: { id: true } },
+            },
+          },
+          // fotos antigas sem observação (modelo anterior) viram uma
+          // observação inicial para continuarem visíveis/editáveis
+          evidencias: {
+            where: { observacaoId: null },
+            orderBy: { criadoEm: "asc" },
+            select: { id: true, legenda: true },
+          },
+        },
       },
     },
   });
@@ -65,9 +79,9 @@ export default async function AvaliarPage({
     string,
     { valor: string | null; naoSeAplica: boolean; comentario: string | null }
   > = {};
-  const evidenciasIniciais: Record<
+  const observacoesIniciais: Record<
     string,
-    { id: string; legenda: string | null }[]
+    { id: string; texto: string | null; fotos: string[] }[]
   > = {};
   for (const r of visita.respostas) {
     respostasIniciais[r.perguntaId] = {
@@ -75,12 +89,21 @@ export default async function AvaliarPage({
       naoSeAplica: r.naoSeAplica,
       comentario: r.comentario,
     };
+    const feed = r.observacoes.map((o) => ({
+      id: o.id,
+      texto: o.texto,
+      fotos: o.evidencias.map((e) => e.id),
+    }));
+    // fotos do modelo anterior (sem observação): viram uma entrada inicial
+    // somente leitura, para continuarem visíveis e contando na validação
     if (r.evidencias.length > 0) {
-      evidenciasIniciais[r.perguntaId] = r.evidencias.map((e) => ({
-        id: e.id,
-        legenda: e.legenda,
-      }));
+      feed.unshift({
+        id: `legado:${r.id}`,
+        texto: r.evidencias.map((e) => e.legenda).filter(Boolean).join(" · ") || null,
+        fotos: r.evidencias.map((e) => e.id),
+      });
     }
+    if (feed.length > 0) observacoesIniciais[r.perguntaId] = feed;
   }
 
   return (
@@ -99,7 +122,7 @@ export default async function AvaliarPage({
         })),
       }))}
       respostasIniciais={respostasIniciais}
-      evidenciasIniciais={evidenciasIniciais}
+      observacoesIniciais={observacoesIniciais}
     />
   );
 }
