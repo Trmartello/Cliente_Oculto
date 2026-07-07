@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Bar,
@@ -97,57 +97,139 @@ function useFiltrosBI() {
 const dimPendente = (pendente: boolean) =>
   pendente ? "opacity-50 transition-opacity" : "transition-opacity";
 
-// ============ CHIPS DE FILTROS ATIVOS ============
+// ============ FILTROS ATIVOS (um controle por dimensão) ============
+
+/**
+ * Controle de uma dimensão do cross-filter: com um valor mostra
+ * "Bloco: X"; com vários vira "Blocos (3) ▾". Clicar abre um dropdown com
+ * TODAS as opções e checkboxes — dá para marcar outros itens ou desmarcar
+ * sem sair do controle. O × limpa a dimensão inteira.
+ */
+function FiltroDimensao({
+  param,
+  rotuloSingular,
+  rotuloPlural,
+  opcoes,
+  selecionados,
+}: {
+  param: string;
+  rotuloSingular: string;
+  rotuloPlural: string;
+  opcoes: { valor: string; rotulo: string }[];
+  selecionados: string[];
+}) {
+  const { toggle, aplicar } = useFiltrosBI();
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setAberto(false);
+      }
+    };
+    document.addEventListener("mousedown", fora);
+    return () => document.removeEventListener("mousedown", fora);
+  }, [aberto]);
+
+  if (selecionados.length === 0) return null;
+
+  const rotuloAtual =
+    selecionados.length === 1
+      ? `${rotuloSingular}: ${
+          opcoes.find((o) => o.valor === selecionados[0])?.rotulo ??
+          selecionados[0]
+        }`
+      : `${rotuloPlural} (${selecionados.length})`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setAberto((a) => !a)}
+        className="flex items-center gap-1.5 rounded-full bg-blue-600 py-1 pl-3 pr-2 text-xs font-semibold text-white hover:bg-blue-700"
+        title="Clique para marcar/desmarcar itens desta dimensão"
+      >
+        {rotuloAtual}
+        <span aria-hidden className="text-blue-200">▾</span>
+        <span
+          role="button"
+          aria-label={`Limpar filtro de ${rotuloPlural.toLowerCase()}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setAberto(false);
+            aplicar({ [param]: null });
+          }}
+          className="rounded-full bg-blue-500 px-1.5 hover:bg-blue-400"
+        >
+          ×
+        </span>
+      </button>
+
+      {aberto && (
+        <div className="absolute left-0 top-full z-40 mt-1.5 max-h-72 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+          {opcoes.map((o) => (
+            <label
+              key={o.valor}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <input
+                type="checkbox"
+                checked={selecionados.includes(o.valor)}
+                onChange={() => toggle(param, o.valor)}
+                className="h-4 w-4"
+              />
+              {o.rotulo}
+            </label>
+          ))}
+          <div className="mt-1 border-t border-slate-100 px-2.5 py-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setAberto(false);
+                aplicar({ [param]: null });
+              }}
+              className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+            >
+              Limpar {rotuloPlural.toLowerCase()}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function FiltrosAtivos({
-  postos,
-  blocos,
-  meses,
-  ciclos = [],
+  selecionados,
+  opcoes,
   periodo,
 }: {
-  /** Postos selecionados (id + nome já resolvido no servidor). */
-  postos: { id: string; nome: string }[];
-  blocos: string[];
-  meses: string[];
-  ciclos?: { id: string; nome: string }[];
+  selecionados: {
+    postos: string[];
+    blocos: string[];
+    meses: string[];
+    ciclos: string[];
+  };
+  opcoes: {
+    postos: { valor: string; rotulo: string }[];
+    blocos: string[];
+    meses: string[];
+    ciclos: { valor: string; rotulo: string }[];
+  };
   /** Rótulo do período manual (De/Até), quando preenchido no formulário. */
   periodo: string | null;
 }) {
-  const { aplicar, toggle, pendente } = useFiltrosBI();
-  const chips: { chave: string; rotulo: string; remover: () => void }[] = [
-    ...postos.map((p) => ({
-      chave: `posto:${p.id}`,
-      rotulo: `Posto: ${p.nome}`,
-      remover: () => toggle("posto", p.id),
-    })),
-    ...meses.map((m) => ({
-      chave: `mes:${m}`,
-      rotulo: `Mês: ${rotuloMes(m)}`,
-      remover: () => toggle("mes", m),
-    })),
-    ...blocos.map((b) => ({
-      chave: `bloco:${b}`,
-      rotulo: `Bloco: ${b}`,
-      remover: () => toggle("bloco", b),
-    })),
-    ...ciclos.map((c) => ({
-      chave: `ciclo:${c.id}`,
-      rotulo: `Ciclo: ${c.nome}`,
-      remover: () => toggle("ciclo", c.id),
-    })),
-    ...(periodo
-      ? [
-          {
-            chave: "periodo",
-            rotulo: `Período: ${periodo}`,
-            remover: () => aplicar({ inicio: null, fim: null }),
-          },
-        ]
-      : []),
-  ];
+  const { aplicar, pendente } = useFiltrosBI();
+  const temFiltro =
+    selecionados.postos.length > 0 ||
+    selecionados.blocos.length > 0 ||
+    selecionados.meses.length > 0 ||
+    selecionados.ciclos.length > 0 ||
+    Boolean(periodo);
 
-  if (chips.length === 0) {
+  if (!temFiltro) {
     return (
       <p className="mb-4 text-xs text-slate-400">
         💡 Clique nas barras, pontos e linhas dos gráficos para filtrar todo o
@@ -161,18 +243,45 @@ export function FiltrosAtivos({
       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
         Filtros ativos:
       </span>
-      {chips.map((c) => (
+      <FiltroDimensao
+        param="posto"
+        rotuloSingular="Posto"
+        rotuloPlural="Postos"
+        opcoes={opcoes.postos}
+        selecionados={selecionados.postos}
+      />
+      <FiltroDimensao
+        param="bloco"
+        rotuloSingular="Bloco"
+        rotuloPlural="Blocos"
+        opcoes={opcoes.blocos.map((b) => ({ valor: b, rotulo: b }))}
+        selecionados={selecionados.blocos}
+      />
+      <FiltroDimensao
+        param="mes"
+        rotuloSingular="Mês"
+        rotuloPlural="Meses"
+        opcoes={opcoes.meses.map((m) => ({ valor: m, rotulo: rotuloMes(m) }))}
+        selecionados={selecionados.meses}
+      />
+      <FiltroDimensao
+        param="ciclo"
+        rotuloSingular="Ciclo"
+        rotuloPlural="Ciclos"
+        opcoes={opcoes.ciclos}
+        selecionados={selecionados.ciclos}
+      />
+      {periodo && (
         <button
-          key={c.chave}
           type="button"
-          onClick={c.remover}
+          onClick={() => aplicar({ inicio: null, fim: null })}
           className="flex items-center gap-1.5 rounded-full bg-blue-600 py-1 pl-3 pr-2 text-xs font-semibold text-white hover:bg-blue-700"
-          title="Remover filtro"
+          title="Remover período"
         >
-          {c.rotulo}
+          Período: {periodo}
           <span aria-hidden className="rounded-full bg-blue-500 px-1.5">×</span>
         </button>
-      ))}
+      )}
       <button
         type="button"
         onClick={() =>

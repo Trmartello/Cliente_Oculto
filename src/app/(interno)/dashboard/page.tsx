@@ -77,15 +77,6 @@ export default async function DashboardPage({
     tipoAvaliacao,
   });
 
-  const postosSelecionados = postosSel
-    .map((id) => postos.find((p) => p.id === id))
-    .filter((p): p is (typeof postos)[number] => Boolean(p))
-    .map((p) => ({ id: p.id, nome: p.nome }));
-
-  const ciclosSelecionados = ciclosSel
-    .map((id) => ciclosTodos.find((c) => c.id === id))
-    .filter((c): c is (typeof ciclosTodos)[number] => Boolean(c));
-
   const rotuloPeriodo =
     inicio || fim
       ? `${inicio ? dataBR(inicio) : "…"} – ${fim ? dataBR(fim) : "…"}`
@@ -191,10 +182,18 @@ export default async function DashboardPage({
 
       {/* Cross-filter: chips dos filtros ativos (um por valor selecionado) */}
       <FiltrosAtivos
-        postos={postosSelecionados}
-        blocos={blocosSel}
-        meses={mesesSel}
-        ciclos={ciclosSelecionados}
+        selecionados={{
+          postos: postosSel,
+          blocos: blocosSel,
+          meses: mesesSel,
+          ciclos: ciclosSel,
+        }}
+        opcoes={{
+          postos: postos.map((p) => ({ valor: p.id, rotulo: p.nome })),
+          blocos: dados.scorePorBloco.map((b) => b.nome),
+          meses: dados.evolucaoMensal.map((m) => m.mes),
+          ciclos: ciclosTodos.map((c) => ({ valor: c.id, rotulo: c.nome })),
+        }}
         periodo={rotuloPeriodo}
       />
 
