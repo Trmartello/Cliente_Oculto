@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import {
   criarObservacao,
   enviarAvaliacao,
+  marcarBlocoNaoSeAplica,
   removerObservacao,
   salvarRascunho,
   type RespostaRascunho,
@@ -36,10 +37,18 @@ export type ObservacaoLocal = {
   fotos: string[]; // ids de evidência
 };
 
+/** Estado da etapa marcada como "não se aplica" ao posto. */
+export type BlocoNALocal = { naoSeAplica: boolean; comentario: string };
+
 /** Rascunho do composer (ainda não virou observação). */
 type RascunhoObs = { texto: string; fotos: string[] };
 
 const RASCUNHO_VAZIO: RascunhoObs = { texto: "", fotos: [] };
+
+type Tela =
+  | { tipo: "hub" }
+  | { tipo: "bloco"; indice: number }
+  | { tipo: "revisao" };
 
 // Recomprime a foto no aparelho antes do upload (essencial em 4G).
 async function comprimirImagem(arquivo: File): Promise<Blob> {
@@ -360,14 +369,17 @@ export function AvaliacaoWizard({
   blocos,
   respostasIniciais,
   observacoesIniciais,
+  blocosNAIniciais,
 }: {
   token: string;
   posto: string;
   blocos: BlocoW[];
   respostasIniciais: Record<string, RespostaLocal>;
   observacoesIniciais: Record<string, ObservacaoLocal[]>;
+  blocosNAIniciais: Record<string, BlocoNALocal>;
 }) {
-  const [passo, setPasso] = useState(0); // blocos.length = revisão
+  // Navegação livre: o avaliador escolhe a ordem das etapas no hub.
+  const [tela, setTela] = useState<Tela>({ tipo: "hub" });
   const [respostas, setRespostas] = useState<Record<string, RespostaLocal>>(
     respostasIniciais,
   );
@@ -375,12 +387,13 @@ export function AvaliacaoWizard({
     Record<string, ObservacaoLocal[]>
   >(observacoesIniciais);
   const [rascunhos, setRascunhos] = useState<Record<string, RascunhoObs>>({});
+  const [blocosNA, setBlocosNA] = useState<Record<string, BlocoNALocal>>(
+    blocosNAIniciais,
+  );
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, startTransition] = useTransition();
 
-  const totalPassos = blocos.length + 1;
-  const naRevisao = passo === blocos.length;
-  const bloco = naRevisao ? null : blocos[passo];
+  const bloco = tela.tipo === "bloco" ? blocos[tela.indice] : null;
 
   function respostaDe(perguntaId: string): RespostaLocal {
     return (
@@ -394,6 +407,10 @@ export function AvaliacaoWizard({
 
   function rascunhoDe(perguntaId: string): RascunhoObs {
     return rascunhos[perguntaId] ?? RASCUNHO_VAZIO;
+  }
+
+  function naDe(blocoId: string): BlocoNALocal {
+    return blocosNA[blocoId] ?? { naoSeAplica: false, comentario: "" };
   }
 
   function totalFotos(perguntaId: string): number {
@@ -412,6 +429,7 @@ export function AvaliacaoWizard({
   }
 
   function pendentesDo(b: BlocoW): PerguntaW[] {
+    if (naDe(b.id).naoSeAplica) return []; // etapa não se aplica ao posto
     return b.perguntas.filter((p) => {
       if (!p.obrigatoria || p.tipo === "TEXTO") return false;
       if (p.tipo === "FOTO") return totalFotos(p.id) === 0;
@@ -419,6 +437,17 @@ export function AvaliacaoWizard({
       return !r.naoSeAplica && (r.valor === null || r.valor === "");
     });
   }
+
+  /** Etapa é dada como preenchida quando não tem pendências e foi tocada
+   *  (alguma resposta/observação) — ou quando marcada como N/A. */
+  function statusDo(b: BlocoW): "na" | "completa" | "pendente" {
+    if (naDe(b.id).naoSeAplica) return "na";
+    if (pendentesDo(b).length > 0) return "pendente";
+    return "completa";
+  }
+
+  const etapasPendentes = blocos.filter((b) => statusDo(b) === "pendente");
+  const etapasOk = blocos.length - etapasPendentes.length;
 
   function rascunhoDo(b: BlocoW): RespostaRascunho[] {
     return b.perguntas.map((p) => {
@@ -449,26 +478,56 @@ export function AvaliacaoWizard({
     }
   }
 
-  function avancar() {
+  /** Sai da etapa atual salvando tudo (sem validar) e volta ao hub. */
+  function voltarAoHub() {
+    if (!bloco) {
+      setTela({ tipo: "hub" });
+      return;
+    }
+    const b = bloco;
+    setErro(null);
+    startTransition(async () => {
+      await comitarRascunhos(b.perguntas);
+      await salvarRascunho(token, rascunhoDo(b));
+      setTela({ tipo: "hub" });
+      window.scrollTo({ top: 0 });
+    });
+  }
+
+  /** Conclui a etapa: exige que não haja pendências e volta ao hub. */
+  function concluirEtapa() {
     if (!bloco) return;
-    const pendentes = pendentesDo(bloco);
+    const b = bloco;
+    const pendentes = pendentesDo(b);
     if (pendentes.length > 0) {
       setErro(`Responda: ${pendentes[0].texto}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     startTransition(async () => {
-      await comitarRascunhos(bloco.perguntas); // observações esquecidas no composer
-      await salvarRascunho(token, rascunhoDo(bloco)); // autosave
-      setPasso((p) => p + 1);
+      await comitarRascunhos(b.perguntas);
+      await salvarRascunho(token, rascunhoDo(b));
+      setTela({ tipo: "hub" });
       window.scrollTo({ top: 0 });
     });
   }
 
-  function voltar() {
+  /** Marca/desmarca a etapa como "não se aplica" (persiste na hora). */
+  function alternarNA(b: BlocoW, naoSeAplica: boolean) {
+    const atual = naDe(b.id);
+    setBlocosNA((m) => ({ ...m, [b.id]: { ...atual, naoSeAplica } }));
     setErro(null);
-    setPasso((p) => Math.max(0, p - 1));
-    window.scrollTo({ top: 0 });
+    startTransition(async () => {
+      await marcarBlocoNaoSeAplica(token, b.id, naoSeAplica, atual.comentario);
+    });
+  }
+
+  function salvarComentarioNA(b: BlocoW, comentario: string) {
+    const atual = naDe(b.id);
+    if (!atual.naoSeAplica) return;
+    startTransition(async () => {
+      await marcarBlocoNaoSeAplica(token, b.id, true, comentario);
+    });
   }
 
   function enviar() {
@@ -485,7 +544,7 @@ export function AvaliacaoWizard({
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col px-4 pb-28 pt-4">
-      {/* Cabeçalho + progresso */}
+      {/* Cabeçalho + progresso geral */}
       <header className="mb-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
           Avaliação Cliente Oculto
@@ -494,13 +553,13 @@ export function AvaliacaoWizard({
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
           <div
             className="h-full rounded-full bg-blue-600 transition-all"
-            style={{ width: `${((passo + 1) / totalPassos) * 100}%` }}
+            style={{ width: `${(etapasOk / blocos.length) * 100}%` }}
           />
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          {naRevisao
-            ? "Revisão final"
-            : `Etapa ${passo + 1} de ${blocos.length}: ${bloco?.nome}`}
+          {tela.tipo === "hub" && `${etapasOk} de ${blocos.length} etapas preenchidas`}
+          {tela.tipo === "bloco" && `Etapa: ${bloco?.nome}`}
+          {tela.tipo === "revisao" && "Revisão final"}
         </p>
       </header>
 
@@ -510,105 +569,266 @@ export function AvaliacaoWizard({
         </p>
       )}
 
-      {/* Perguntas do bloco atual */}
+      {/* ===================== HUB DE ETAPAS ===================== */}
+      {tela.tipo === "hub" && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Siga o roteiro na ordem que preferir — toque numa etapa para
+            avaliá-la.
+            {etapasPendentes.length > 0 ? (
+              <span className="mt-1 block font-semibold text-amber-700">
+                {etapasPendentes.length === 1
+                  ? "Existe 1 etapa para preencher."
+                  : `Existem ${etapasPendentes.length} etapas para preencher.`}
+              </span>
+            ) : (
+              <span className="mt-1 block font-semibold text-emerald-700">
+                Todas as etapas preenchidas — revise e envie.
+              </span>
+            )}
+          </p>
+          {blocos.map((b, i) => {
+            const st = statusDo(b);
+            const pend = pendentesDo(b).length;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => {
+                  setErro(null);
+                  setTela({ tipo: "bloco", indice: i });
+                  window.scrollTo({ top: 0 });
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm active:bg-slate-50"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900">
+                    {i + 1}. {b.nome}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {st === "na"
+                      ? "Marcada como não se aplica"
+                      : `${b.perguntas.length} item${b.perguntas.length > 1 ? "s" : ""} de avaliação`}
+                  </p>
+                </div>
+                {st === "completa" && (
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                    ✓ Completa
+                  </span>
+                )}
+                {st === "na" && (
+                  <span className="shrink-0 rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                    Não se aplica
+                  </span>
+                )}
+                {st === "pendente" && (
+                  <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                    {pend} pendente{pend > 1 ? "s" : ""}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ===================== ETAPA (BLOCO) ===================== */}
       {bloco && (
         <div className="space-y-4">
-          {bloco.perguntas.map((p, idx) => {
-            const r = respostaDe(p.id);
-            const feed = feedDe(p.id);
-            const rasc = rascunhoDe(p.id);
-            return (
-              <div
-                key={p.id}
-                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-                <p className="font-medium text-slate-900">
-                  {idx + 1}. {p.texto}
-                  {p.obrigatoria && p.tipo !== "TEXTO" && (
-                    <span className="text-red-500"> *</span>
-                  )}
+          {/* Etapa não se aplica ao posto */}
+          <div
+            className={`rounded-2xl border p-4 ${
+              naDe(bloco.id).naoSeAplica
+                ? "border-slate-300 bg-slate-100"
+                : "border-slate-200 bg-white"
+            }`}
+          >
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={naDe(bloco.id).naoSeAplica}
+                onChange={(e) => alternarNA(bloco, e.target.checked)}
+                className="h-5 w-5"
+              />
+              Esta etapa não se aplica a este posto
+            </label>
+            {naDe(bloco.id).naoSeAplica && (
+              <div className="mt-3">
+                <textarea
+                  value={naDe(bloco.id).comentario}
+                  onChange={(e) =>
+                    setBlocosNA((m) => ({
+                      ...m,
+                      [bloco.id]: { naoSeAplica: true, comentario: e.target.value },
+                    }))
+                  }
+                  onBlur={(e) => salvarComentarioNA(bloco, e.target.value)}
+                  rows={2}
+                  placeholder="Comente o motivo (ex.: o posto não presta este serviço) — opcional"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Os itens desta etapa não contarão no cálculo do score.
                 </p>
+              </div>
+            )}
+          </div>
 
-                {!r.naoSeAplica && (
-                  <div className="mt-3">
-                    {p.tipo === "SIM_NAO" && (
-                      <div className="flex gap-2">
-                        <BotaoOpcao
-                          ativo={r.valor === "SIM"}
-                          tom="positivo"
-                          onClick={() => atualizar(p.id, { valor: "SIM" })}
-                        >
-                          Sim
-                        </BotaoOpcao>
-                        <BotaoOpcao
-                          ativo={r.valor === "NAO"}
-                          tom="negativo"
-                          onClick={() => atualizar(p.id, { valor: "NAO" })}
-                        >
-                          Não
-                        </BotaoOpcao>
-                      </div>
+          {/* Perguntas (ocultas quando a etapa não se aplica) */}
+          {!naDe(bloco.id).naoSeAplica &&
+            bloco.perguntas.map((p, idx) => {
+              const r = respostaDe(p.id);
+              const feed = feedDe(p.id);
+              const rasc = rascunhoDe(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <p className="font-medium text-slate-900">
+                    {idx + 1}. {p.texto}
+                    {p.obrigatoria && p.tipo !== "TEXTO" && (
+                      <span className="text-red-500"> *</span>
                     )}
-                    {p.tipo === "ATENDE_NAO_ATENDE" && (
-                      <div className="flex gap-2">
-                        <BotaoOpcao
-                          ativo={r.valor === "ATENDE"}
-                          tom="positivo"
-                          onClick={() => atualizar(p.id, { valor: "ATENDE" })}
-                        >
-                          Atende
-                        </BotaoOpcao>
-                        <BotaoOpcao
-                          ativo={r.valor === "NAO_ATENDE"}
-                          tom="negativo"
-                          onClick={() =>
-                            atualizar(p.id, { valor: "NAO_ATENDE" })
-                          }
-                        >
-                          Não atende
-                        </BotaoOpcao>
-                      </div>
-                    )}
-                    {p.tipo === "NOTA_1_5" && (
-                      <Estrelas
-                        valor={r.valor ? Number(r.valor) : null}
-                        onChange={(nota) =>
-                          atualizar(p.id, { valor: String(nota) })
-                        }
-                      />
-                    )}
-                    {p.tipo === "NOTA_1_10" && (
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {Array.from({ length: 10 }, (_, i) =>
-                          String(i + 1),
-                        ).map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => atualizar(p.id, { valor: n })}
-                            className={`min-h-11 rounded-lg border text-base font-semibold ${
-                              r.valor === n
-                                ? "border-blue-600 bg-blue-600 text-white"
-                                : "border-slate-300 bg-white text-slate-700 active:bg-slate-100"
-                            }`}
+                  </p>
+
+                  {!r.naoSeAplica && (
+                    <div className="mt-3">
+                      {p.tipo === "SIM_NAO" && (
+                        <div className="flex gap-2">
+                          <BotaoOpcao
+                            ativo={r.valor === "SIM"}
+                            tom="positivo"
+                            onClick={() => atualizar(p.id, { valor: "SIM" })}
                           >
-                            {n}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {p.tipo === "TEXTO" && (
-                      <textarea
-                        value={r.valor ?? ""}
+                            Sim
+                          </BotaoOpcao>
+                          <BotaoOpcao
+                            ativo={r.valor === "NAO"}
+                            tom="negativo"
+                            onClick={() => atualizar(p.id, { valor: "NAO" })}
+                          >
+                            Não
+                          </BotaoOpcao>
+                        </div>
+                      )}
+                      {p.tipo === "ATENDE_NAO_ATENDE" && (
+                        <div className="flex gap-2">
+                          <BotaoOpcao
+                            ativo={r.valor === "ATENDE"}
+                            tom="positivo"
+                            onClick={() => atualizar(p.id, { valor: "ATENDE" })}
+                          >
+                            Atende
+                          </BotaoOpcao>
+                          <BotaoOpcao
+                            ativo={r.valor === "NAO_ATENDE"}
+                            tom="negativo"
+                            onClick={() =>
+                              atualizar(p.id, { valor: "NAO_ATENDE" })
+                            }
+                          >
+                            Não atende
+                          </BotaoOpcao>
+                        </div>
+                      )}
+                      {p.tipo === "NOTA_1_5" && (
+                        <Estrelas
+                          valor={r.valor ? Number(r.valor) : null}
+                          onChange={(nota) =>
+                            atualizar(p.id, { valor: String(nota) })
+                          }
+                        />
+                      )}
+                      {p.tipo === "NOTA_1_10" && (
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {Array.from({ length: 10 }, (_, i) =>
+                            String(i + 1),
+                          ).map((n) => (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => atualizar(p.id, { valor: n })}
+                              className={`min-h-11 rounded-lg border text-base font-semibold ${
+                                r.valor === n
+                                  ? "border-blue-600 bg-blue-600 text-white"
+                                  : "border-slate-300 bg-white text-slate-700 active:bg-slate-100"
+                              }`}
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {p.tipo === "TEXTO" && (
+                        <textarea
+                          value={r.valor ?? ""}
+                          onChange={(e) =>
+                            atualizar(p.id, { valor: e.target.value })
+                          }
+                          rows={3}
+                          placeholder="Escreva sua observação…"
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base"
+                        />
+                      )}
+                      {p.tipo === "FOTO" && (
+                        <Observacoes
+                          token={token}
+                          perguntaId={p.id}
+                          feed={feed}
+                          rascunho={rasc}
+                          onRascunho={(nr) =>
+                            setRascunhos((a) => ({ ...a, [p.id]: nr }))
+                          }
+                          onNovaObservacao={(obs) =>
+                            setObservacoes((a) => ({
+                              ...a,
+                              [p.id]: [...(a[p.id] ?? []), obs],
+                            }))
+                          }
+                          onRemoverObservacao={(id) =>
+                            setObservacoes((a) => ({
+                              ...a,
+                              [p.id]: (a[p.id] ?? []).filter((o) => o.id !== id),
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {p.permiteNaoSeAplica && (
+                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={r.naoSeAplica}
                         onChange={(e) =>
-                          atualizar(p.id, { valor: e.target.value })
+                          atualizar(p.id, {
+                            naoSeAplica: e.target.checked,
+                            ...(e.target.checked ? { valor: null } : {}),
+                          })
                         }
-                        rows={3}
-                        placeholder="Escreva sua observação…"
-                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-base"
+                        className="h-5 w-5"
                       />
-                    )}
-                    {p.tipo === "FOTO" && (
+                      Não se aplica
+                    </label>
+                  )}
+
+                  {p.tipo !== "FOTO" && p.tipo !== "TEXTO" && !r.naoSeAplica && (
+                    <AreaObservacoes
+                      temConteudo={
+                        feed.length > 0 ||
+                        Boolean(rasc.texto) ||
+                        rasc.fotos.length > 0 ||
+                        Boolean(r.comentario)
+                      }
+                    >
+                      {/* comentário antigo (modelo anterior), somente leitura */}
+                      {r.comentario && (
+                        <p className="mb-2 rounded-lg bg-white px-3 py-2 text-sm italic text-slate-600">
+                          “{r.comentario}”
+                        </p>
+                      )}
                       <Observacoes
                         token={token}
                         perguntaId={p.id}
@@ -630,79 +850,23 @@ export function AvaliacaoWizard({
                           }))
                         }
                       />
-                    )}
-                  </div>
-                )}
-
-                {p.permiteNaoSeAplica && (
-                  <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={r.naoSeAplica}
-                      onChange={(e) =>
-                        atualizar(p.id, {
-                          naoSeAplica: e.target.checked,
-                          ...(e.target.checked ? { valor: null } : {}),
-                        })
-                      }
-                      className="h-5 w-5"
-                    />
-                    Não se aplica
-                  </label>
-                )}
-
-                {p.tipo !== "FOTO" && p.tipo !== "TEXTO" && !r.naoSeAplica && (
-                  <AreaObservacoes
-                    temConteudo={
-                      feed.length > 0 ||
-                      Boolean(rasc.texto) ||
-                      rasc.fotos.length > 0 ||
-                      Boolean(r.comentario)
-                    }
-                  >
-                    {/* comentário antigo (modelo anterior), somente leitura */}
-                    {r.comentario && (
-                      <p className="mb-2 rounded-lg bg-white px-3 py-2 text-sm italic text-slate-600">
-                        “{r.comentario}”
-                      </p>
-                    )}
-                    <Observacoes
-                      token={token}
-                      perguntaId={p.id}
-                      feed={feed}
-                      rascunho={rasc}
-                      onRascunho={(nr) =>
-                        setRascunhos((a) => ({ ...a, [p.id]: nr }))
-                      }
-                      onNovaObservacao={(obs) =>
-                        setObservacoes((a) => ({
-                          ...a,
-                          [p.id]: [...(a[p.id] ?? []), obs],
-                        }))
-                      }
-                      onRemoverObservacao={(id) =>
-                        setObservacoes((a) => ({
-                          ...a,
-                          [p.id]: (a[p.id] ?? []).filter((o) => o.id !== id),
-                        }))
-                      }
-                    />
-                  </AreaObservacoes>
-                )}
-              </div>
-            );
-          })}
+                    </AreaObservacoes>
+                  )}
+                </div>
+              );
+            })}
         </div>
       )}
 
-      {/* Revisão final */}
-      {naRevisao && (
+      {/* ===================== REVISÃO FINAL ===================== */}
+      {tela.tipo === "revisao" && (
         <div className="space-y-3">
           <p className="text-sm text-slate-600">
             Confira o resumo antes de enviar. Após o envio não será possível
             alterar as respostas.
           </p>
           {blocos.map((b, i) => {
+            const st = statusDo(b);
             const pendentes = pendentesDo(b);
             const respondidas = b.perguntas.filter((p) => {
               const r = respostaDe(p.id);
@@ -716,16 +880,26 @@ export function AvaliacaoWizard({
               <button
                 key={b.id}
                 type="button"
-                onClick={() => setPasso(i)}
+                onClick={() => {
+                  setErro(null);
+                  setTela({ tipo: "bloco", indice: i });
+                  window.scrollTo({ top: 0 });
+                }}
                 className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm active:bg-slate-50"
               >
                 <div>
                   <p className="font-semibold text-slate-900">{b.nome}</p>
                   <p className="text-sm text-slate-500">
-                    {respondidas} de {b.perguntas.length} respondidas
+                    {st === "na"
+                      ? "Não se aplica a este posto"
+                      : `${respondidas} de ${b.perguntas.length} respondidas`}
                   </p>
                 </div>
-                {pendentes.length > 0 ? (
+                {st === "na" ? (
+                  <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                    Não se aplica
+                  </span>
+                ) : pendentes.length > 0 ? (
                   <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
                     {pendentes.length} pendente{pendentes.length > 1 ? "s" : ""}
                   </span>
@@ -740,41 +914,68 @@ export function AvaliacaoWizard({
         </div>
       )}
 
-      {/* Barra de navegação fixa */}
+      {/* ===================== BARRA FIXA ===================== */}
       <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-lg gap-3">
-          {passo > 0 && (
+          {tela.tipo === "hub" && (
             <button
               type="button"
-              onClick={voltar}
-              disabled={salvando}
-              className="min-h-12 rounded-xl border border-slate-300 bg-white px-5 text-base font-semibold text-slate-700 active:bg-slate-100 disabled:opacity-50"
-            >
-              Voltar
-            </button>
-          )}
-          {naRevisao ? (
-            <button
-              type="button"
-              onClick={enviar}
-              disabled={salvando || blocos.some((b) => pendentesDo(b).length > 0)}
-              className="min-h-12 flex-1 rounded-xl bg-emerald-600 text-base font-bold text-white active:bg-emerald-700 disabled:opacity-50"
-            >
-              {salvando ? "Enviando…" : "Enviar avaliação"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={avancar}
+              onClick={() => {
+                setErro(null);
+                setTela({ tipo: "revisao" });
+                window.scrollTo({ top: 0 });
+              }}
               disabled={salvando}
               className="min-h-12 flex-1 rounded-xl bg-blue-600 text-base font-bold text-white active:bg-blue-700 disabled:opacity-50"
             >
-              {salvando
-                ? "Salvando…"
-                : passo === blocos.length - 1
-                  ? "Ir para revisão"
-                  : "Avançar"}
+              Revisar e enviar
             </button>
+          )}
+
+          {tela.tipo === "bloco" && (
+            <>
+              <button
+                type="button"
+                onClick={voltarAoHub}
+                disabled={salvando}
+                className="min-h-12 rounded-xl border border-slate-300 bg-white px-5 text-base font-semibold text-slate-700 active:bg-slate-100 disabled:opacity-50"
+              >
+                ‹ Etapas
+              </button>
+              <button
+                type="button"
+                onClick={concluirEtapa}
+                disabled={salvando}
+                className="min-h-12 flex-1 rounded-xl bg-blue-600 text-base font-bold text-white active:bg-blue-700 disabled:opacity-50"
+              >
+                {salvando ? "Salvando…" : "Concluir etapa"}
+              </button>
+            </>
+          )}
+
+          {tela.tipo === "revisao" && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setErro(null);
+                  setTela({ tipo: "hub" });
+                  window.scrollTo({ top: 0 });
+                }}
+                disabled={salvando}
+                className="min-h-12 rounded-xl border border-slate-300 bg-white px-5 text-base font-semibold text-slate-700 active:bg-slate-100 disabled:opacity-50"
+              >
+                ‹ Etapas
+              </button>
+              <button
+                type="button"
+                onClick={enviar}
+                disabled={salvando || etapasPendentes.length > 0}
+                className="min-h-12 flex-1 rounded-xl bg-emerald-600 text-base font-bold text-white active:bg-emerald-700 disabled:opacity-50"
+              >
+                {salvando ? "Enviando…" : "Enviar avaliação"}
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -170,6 +170,7 @@ model Bloco {
 
   questionario Questionario @relation(fields: [questionarioId], references: [id], onDelete: Cascade)
   perguntas    Pergunta[]
+  respostas    BlocoResposta[]
 
   @@index([questionarioId, ordem])
 }
@@ -235,6 +236,7 @@ model Visita {
   criadaPor        Usuario           @relation("VisitaCriadaPor", fields: [criadaPorId], references: [id])
   token            TokenAcesso?
   respostas        Resposta[]
+  blocosRespostas  BlocoResposta[]
   naoConformidades NaoConformidade[]
 
   @@index([postoId, dataEnvio])
@@ -284,6 +286,24 @@ model Resposta {
   observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// Resposta do avaliador NO NÍVEL DA ETAPA (bloco): usada quando a etapa
+// inteira não se aplica ao posto (ex.: não presta troca de óleo), com
+// comentário opcional justificando.
+model BlocoResposta {
+  id          String  @id @default(cuid())
+  visitaId    String
+  blocoId     String
+  naoSeAplica Boolean @default(true)
+  comentario  String? @db.Text
+
+  atualizadoEm DateTime @updatedAt
+
+  visita Visita @relation(fields: [visitaId], references: [id], onDelete: Cascade)
+  bloco  Bloco  @relation(fields: [blocoId], references: [id], onDelete: Cascade)
+
+  @@unique([visitaId, blocoId])
 }
 
 // Feed de observações do avaliador por item: cada entrada pode ter só texto,

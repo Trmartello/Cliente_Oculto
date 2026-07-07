@@ -66,6 +66,16 @@ export interface RespostaInput {
   naoSeAplica?: boolean;
 }
 
+export interface OpcoesAvaliacao {
+  /**
+   * Blocos (etapas) marcados como "não se aplica" pelo avaliador — ex.: o
+   * posto não presta o serviço avaliado. Todas as perguntas do bloco são
+   * tratadas como N/A: o bloco não pontua e os pesos dos demais blocos são
+   * renormalizados.
+   */
+  blocosNaoSeAplica?: string[];
+}
+
 export interface ResultadoPergunta {
   perguntaId: string;
   blocoId: string;

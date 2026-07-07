@@ -2,6 +2,7 @@ import type {
   BlocoConfig,
   FalhaCritica,
   NcACriar,
+  OpcoesAvaliacao,
   PerguntaConfig,
   QuestionarioConfig,
   RespostaInput,
@@ -101,12 +102,17 @@ function avaliarPergunta(
  *   excluído renormaliza os blocos restantes.
  * - Falha crítica (pergunta CRITICA reprovada) aplica a penalidade
  *   parametrizada do questionário e gera Não Conformidade automática.
+ * - Blocos em opcoes.blocosNaoSeAplica têm TODAS as perguntas tratadas como
+ *   N/A (etapa que não se aplica ao posto): não pontuam, não geram falha
+ *   crítica e os pesos dos demais blocos são renormalizados.
  */
 export function calcularScore(
   config: QuestionarioConfig,
   respostas: RespostaInput[],
+  opcoes?: OpcoesAvaliacao,
 ): ResultadoAvaliacao {
   const limiarReprovacao = config.limiarReprovacao ?? LIMIAR_REPROVACAO_PADRAO;
+  const blocosNA = new Set(opcoes?.blocosNaoSeAplica ?? []);
   const porPerguntaId = new Map(respostas.map((r) => [r.perguntaId, r]));
 
   const porPergunta: ResultadoPergunta[] = [];
@@ -118,8 +124,16 @@ export function calcularScore(
   const falhasCriticas: FalhaCritica[] = [];
 
   for (const bloco of config.blocos) {
+    const blocoNaoSeAplica = blocosNA.has(bloco.id);
     const avaliadas = bloco.perguntas.map((p) =>
-      avaliarPergunta(bloco, p, porPerguntaId.get(p.id), limiarReprovacao),
+      avaliarPergunta(
+        bloco,
+        p,
+        blocoNaoSeAplica
+          ? { perguntaId: p.id, valor: null, naoSeAplica: true }
+          : porPerguntaId.get(p.id),
+        limiarReprovacao,
+      ),
     );
 
     const pontuaveis = avaliadas.filter((a) => a.pontua);

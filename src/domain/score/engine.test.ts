@@ -157,6 +157,69 @@ describe("calcularScore — normalização de pesos", () => {
   });
 });
 
+describe("calcularScore — etapa (bloco) marcada como não se aplica", () => {
+  it("bloco em blocosNaoSeAplica não pontua e redistribui pesos", () => {
+    const p1 = pergunta(); // Troca de óleo — posto não presta o serviço
+    const p2 = pergunta();
+    const p3 = pergunta();
+    const cfg = config([
+      bloco("Troca de óleo", 20, [p1]),
+      bloco("A", 50, [p2]),
+      bloco("B", 30, [p3]),
+    ]);
+    const r = calcularScore(
+      cfg,
+      [
+        { perguntaId: p2.id, valor: "SIM" },
+        { perguntaId: p3.id, valor: "NAO" },
+      ],
+      { blocosNaoSeAplica: ["b-Troca de óleo"] },
+    );
+    const oleo = r.porBloco.find((b) => b.nome === "Troca de óleo");
+    expect(oleo?.pontua).toBe(false);
+    expect(oleo?.score).toBeNull();
+    expect(oleo?.pesoNormalizado).toBe(0);
+    // 50/80 * 100 + 30/80 * 0 = 62.5
+    expect(r.scoreFinal).toBe(62.5);
+    // todas as perguntas do bloco N/A saem como não se aplica
+    expect(
+      r.porPergunta.filter((p) => p.blocoId === "b-Troca de óleo")
+        .every((p) => p.naoSeAplica && !p.pontua),
+    ).toBe(true);
+  });
+
+  it("bloco N/A ignora respostas dadas e não gera falha crítica", () => {
+    const critica = pergunta({ criticidade: "CRITICA" });
+    const p2 = pergunta();
+    const cfg = config(
+      [bloco("Loja", 40, [critica]), bloco("Pista", 60, [p2])],
+      { penalidadeCriticaTipo: "TETO", penalidadeCriticaValor: 74 },
+    );
+    // resposta reprovada dentro do bloco N/A não pode penalizar
+    const r = calcularScore(
+      cfg,
+      [
+        { perguntaId: critica.id, valor: "NAO" },
+        { perguntaId: p2.id, valor: "SIM" },
+      ],
+      { blocosNaoSeAplica: ["b-Loja"] },
+    );
+    expect(r.temFalhaCritica).toBe(false);
+    expect(r.ncsACriar).toHaveLength(0);
+    expect(r.scoreFinal).toBe(100);
+  });
+
+  it("todos os blocos N/A => score nulo", () => {
+    const p1 = pergunta();
+    const cfg = config([bloco("A", 100, [p1])]);
+    const r = calcularScore(cfg, [{ perguntaId: p1.id, valor: "SIM" }], {
+      blocosNaoSeAplica: ["b-A"],
+    });
+    expect(r.scoreFinal).toBeNull();
+    expect(r.faixaIgeo).toBeNull();
+  });
+});
+
 describe("calcularScore — falha crítica e penalidades", () => {
   const montar = (
     tipo: QuestionarioConfig["penalidadeCriticaTipo"],

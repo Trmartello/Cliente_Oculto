@@ -55,6 +55,55 @@ export async function salvarRascunho(
   return { ok: true };
 }
 
+/**
+ * Marca/desmarca uma ETAPA (bloco) inteira como "não se aplica" ao posto —
+ * ex.: o posto não presta serviço de troca de óleo — com comentário opcional
+ * do avaliador justificando. Desmarcar remove o registro.
+ */
+export async function marcarBlocoNaoSeAplica(
+  token: string,
+  blocoId: string,
+  naoSeAplica: boolean,
+  comentario: string,
+): Promise<AvaliacaoState> {
+  const validacao = await validarToken(token);
+  if (!validacao.ok) return { erro: "Link inválido ou expirado" };
+
+  // o bloco precisa pertencer ao questionário desta visita
+  const visita = await prisma.visita.findUniqueOrThrow({
+    where: { id: validacao.visitaId },
+    select: { questionarioId: true },
+  });
+  const bloco = await prisma.bloco.findUnique({
+    where: { id: blocoId },
+    select: { questionarioId: true },
+  });
+  if (!bloco || bloco.questionarioId !== visita.questionarioId) {
+    return { erro: "Etapa inválida" };
+  }
+
+  if (!naoSeAplica) {
+    await prisma.blocoResposta.deleteMany({
+      where: { visitaId: validacao.visitaId, blocoId },
+    });
+    return { ok: true };
+  }
+
+  await prisma.blocoResposta.upsert({
+    where: {
+      visitaId_blocoId: { visitaId: validacao.visitaId, blocoId },
+    },
+    update: { naoSeAplica: true, comentario: comentario.trim() || null },
+    create: {
+      visitaId: validacao.visitaId,
+      blocoId,
+      naoSeAplica: true,
+      comentario: comentario.trim() || null,
+    },
+  });
+  return { ok: true };
+}
+
 export interface ObservacaoCriada {
   erro?: string;
   observacao?: { id: string; texto: string | null; fotos: string[] };
@@ -186,13 +235,25 @@ export async function enviarAvaliacao(
           },
         },
       },
+      blocosRespostas: true,
     },
   });
 
+  // Etapas marcadas como "não se aplica" pelo avaliador.
+  const blocosNA = new Set(
+    visita.blocosRespostas.filter((b) => b.naoSeAplica).map((b) => b.blocoId),
+  );
+  const perguntasEmBlocoNA = new Set(
+    visita.questionario.blocos
+      .filter((b) => blocosNA.has(b.id))
+      .flatMap((b) => b.perguntas.map((p) => p.id)),
+  );
+
   const porPergunta = new Map(respostas.map((r) => [r.perguntaId, r]));
 
-  // Validação server-side das obrigatórias.
+  // Validação server-side das obrigatórias (etapas N/A ficam de fora).
   for (const bloco of visita.questionario.blocos) {
+    if (blocosNA.has(bloco.id)) continue;
     for (const p of bloco.perguntas) {
       if (!p.obrigatoria) continue;
       const r = porPergunta.get(p.id);
@@ -233,7 +294,9 @@ export async function enviarAvaliacao(
     naoSeAplica: r.naoSeAplica,
   }));
 
-  const resultado = calcularScore(config, entradas);
+  const resultado = calcularScore(config, entradas, {
+    blocosNaoSeAplica: [...blocosNA],
+  });
   const resultadoPorPergunta = new Map(
     resultado.porPergunta.map((r) => [r.perguntaId, r]),
   );
@@ -247,8 +310,9 @@ export async function enviarAvaliacao(
       const calc = resultadoPorPergunta.get(r.perguntaId);
       const blocoId = calc?.blocoId;
       const snapshot = {
-        valor: r.valor,
-        naoSeAplica: r.naoSeAplica,
+        // pergunta dentro de etapa N/A é gravada como não se aplica
+        valor: perguntasEmBlocoNA.has(r.perguntaId) ? null : r.valor,
+        naoSeAplica: perguntasEmBlocoNA.has(r.perguntaId) || r.naoSeAplica,
         comentario: r.comentario,
         notaObtida: calc?.notaObtida ?? null,
         notaMaximaSnapshot: calc?.notaMaxima ?? null,

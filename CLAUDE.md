@@ -106,12 +106,22 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
 
 ## Wizard de avaliação (mobile)
 
-- `src/app/(publico)/avaliar/[token]/wizard.tsx`. Autosave por etapa
-  (`salvarRascunho`). Perguntas `NOTA_1_5` = **estrelas**; comentário do item
-  independe de foto (comentário avulso funciona sozinho). Cada foto tem
-  **legenda** própria (`Evidencia.legenda`), salva em blur via
-  `salvarLegendaEvidencia` (confere posse pelo token). Fotos são recomprimidas no
-  aparelho e enviadas a `/api/upload`.
+- `src/app/(publico)/avaliar/[token]/wizard.tsx`. Navegação em **hub de
+  etapas**: o avaliador escolhe a ordem (roteiro livre), o hub mostra "X de N
+  etapas preenchidas" e badges por etapa (✓ Completa / N pendentes / Não se
+  aplica). "Concluir etapa" valida e autosalva (`salvarRascunho`); "‹ Etapas"
+  sai sem validar (também salva).
+- **Etapa "não se aplica"** (`BlocoResposta`): checkbox no topo da etapa +
+  comentário do motivo, persistido na hora via `marcarBlocoNaoSeAplica`. No
+  envio, o engine recebe `opcoes.blocosNaoSeAplica` — o bloco não pontua, não
+  gera falha crítica e os pesos dos demais são renormalizados (testado).
+- Perguntas `NOTA_1_5` = **estrelas**. Cada item tem um **feed de
+  observações** (`Observacao`): entradas com só texto, texto + N fotos ou só
+  foto, exibidas na ordem de criação; composer com "Adicionar observação",
+  remoção por entrada e auto-commit de rascunho esquecido ao concluir/enviar
+  (`criarObservacao`/`removerObservacao`, posse conferida pelo token). Fotos
+  são recomprimidas no aparelho e enviadas a `/api/upload`; perguntas tipo
+  FOTO usam o mesmo feed (foto conta como resposta).
 
 ## Reenvio de link e reagendamento
 

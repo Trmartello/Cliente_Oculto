@@ -112,6 +112,7 @@ export default async function VisitaDetalhePage({
           },
         },
       },
+      blocosRespostas: true,
       naoConformidades: true,
     },
   });
@@ -119,6 +120,12 @@ export default async function VisitaDetalhePage({
 
   const respostaPorPergunta = new Map(
     visita.respostas.map((r) => [r.perguntaId, r]),
+  );
+  // Etapas marcadas como "não se aplica" pelo avaliador (com comentário).
+  const naPorBloco = new Map(
+    visita.blocosRespostas
+      .filter((b) => b.naoSeAplica)
+      .map((b) => [b.blocoId, b]),
   );
   const scoresPorBloco =
     (visita.scoresPorBloco as unknown as ScoreBlocoSnapshot[] | null) ?? [];
@@ -321,6 +328,30 @@ export default async function VisitaDetalhePage({
         <div className="space-y-4">
           {visita.questionario.blocos.map((bloco) => {
             const snapshot = scorePorBlocoId.get(bloco.id);
+            const blocoNA = naPorBloco.get(bloco.id);
+            if (blocoNA) {
+              return (
+                <Card key={bloco.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-semibold text-slate-900">
+                      {bloco.nome}
+                    </h3>
+                    <Badge cor="bg-slate-200 text-slate-700">
+                      Não se aplica
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Etapa marcada pelo avaliador como não aplicável a este
+                    posto — excluída do cálculo do score.
+                  </p>
+                  {blocoNA.comentario && (
+                    <p className="mt-1 text-sm italic text-slate-500">
+                      “{blocoNA.comentario}”
+                    </p>
+                  )}
+                </Card>
+              );
+            }
             return (
               <Card key={bloco.id}>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

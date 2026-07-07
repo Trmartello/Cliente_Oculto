@@ -72,6 +72,7 @@ export default async function AvaliarPage({
           },
         },
       },
+      blocosRespostas: true,
     },
   });
 
@@ -106,6 +107,20 @@ export default async function AvaliarPage({
     if (feed.length > 0) observacoesIniciais[r.perguntaId] = feed;
   }
 
+  // Etapas já marcadas como "não se aplica" pelo avaliador.
+  const blocosNAIniciais: Record<
+    string,
+    { naoSeAplica: boolean; comentario: string }
+  > = {};
+  for (const b of visita.blocosRespostas) {
+    if (b.naoSeAplica) {
+      blocosNAIniciais[b.blocoId] = {
+        naoSeAplica: true,
+        comentario: b.comentario ?? "",
+      };
+    }
+  }
+
   return (
     <AvaliacaoWizard
       token={token}
@@ -123,6 +138,7 @@ export default async function AvaliarPage({
       }))}
       respostasIniciais={respostasIniciais}
       observacoesIniciais={observacoesIniciais}
+      blocosNAIniciais={blocosNAIniciais}
     />
   );
 }
