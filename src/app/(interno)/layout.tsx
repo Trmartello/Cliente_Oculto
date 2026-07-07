@@ -32,6 +32,9 @@ export default async function InternoLayout({
         ]
       : []),
     { href: "/relatorios", rotulo: "Relatórios" },
+    ...(sessao.papel === "ADMIN"
+      ? [{ href: "/cadastros/auditoria", rotulo: "Auditoria" }]
+      : []),
   ];
 
   return (

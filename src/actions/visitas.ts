@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { exigirPapel } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/auditoria";
 import {
   gerarTokenBruto,
   hashToken,
@@ -64,6 +65,13 @@ export async function criarVisita(
     },
   });
 
+  await registrarAuditoria(
+    sessao,
+    "visita.criar",
+    "Visita",
+    visita.id,
+    `Criou visita com link de avaliação (validade ${parsed.data.validadeDias} dias)`,
+  );
   revalidatePath("/visitas");
   return {
     ok: true,
@@ -80,7 +88,7 @@ export async function gerarNovoLink(
   _prev: VisitaState,
   formData: FormData,
 ): Promise<VisitaState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const visitaId = formData.get("visitaId") as string;
   const validadeDias = Math.min(
     Math.max(Number(formData.get("validadeDias") ?? 7), 1),
@@ -126,6 +134,13 @@ export async function gerarNovoLink(
   ]);
 
   revalidatePath("/visitas");
+  await registrarAuditoria(
+    sessao,
+    "link.novo",
+    "Visita",
+    visitaId,
+    `Gerou novo link do avaliador (validade ${validadeDias} dias) — o anterior foi invalidado`,
+  );
   revalidatePath(`/visitas/${visitaId}`);
   return { ok: true, visitaId, link: await montarLinkAvaliacao(tokenBruto) };
 }
@@ -139,7 +154,7 @@ export async function redefinirDataVisita(
   _prev: VisitaState,
   formData: FormData,
 ): Promise<VisitaState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const visitaId = formData.get("visitaId") as string;
   const dataAgendada = formData.get("dataAgendada") as string;
   const validadeDiasRaw = formData.get("validadeDias");
@@ -184,24 +199,39 @@ export async function redefinirDataVisita(
 
   await prisma.$transaction(ops);
 
+  await registrarAuditoria(
+    sessao,
+    "visita.reagendar",
+    "Visita",
+    visitaId,
+    `Reagendou a visita para ${dataAgendada}` +
+      (ops.length > 1 ? " e estendeu a validade do link" : ""),
+  );
   revalidatePath("/visitas");
   revalidatePath(`/visitas/${visitaId}`);
   return { ok: true, visitaId };
 }
 
 export async function revogarLink(visitaId: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   await prisma.tokenAcesso.updateMany({
     where: { visitaId, status: "ATIVO" },
     // zera o token cru: link não pode mais ser recuperado
     data: { status: "REVOGADO", tokenPlano: null },
   });
   revalidatePath("/visitas");
+  await registrarAuditoria(
+    sessao,
+    "link.revogar",
+    "Visita",
+    visitaId,
+    "Revogou o link do avaliador",
+  );
   revalidatePath(`/visitas/${visitaId}`);
 }
 
 export async function cancelarVisita(visitaId: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const visita = await prisma.visita.findUniqueOrThrow({
     where: { id: visitaId },
   });
@@ -216,6 +246,13 @@ export async function cancelarVisita(visitaId: string): Promise<void> {
       data: { status: "REVOGADO", tokenPlano: null },
     }),
   ]);
+  await registrarAuditoria(
+    sessao,
+    "visita.cancelar",
+    "Visita",
+    visitaId,
+    "Cancelou a visita (link revogado)",
+  );
   revalidatePath("/visitas");
   revalidatePath(`/visitas/${visitaId}`);
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { registrarAuditoria } from "@/lib/auditoria";
 import { exigirSessao } from "@/lib/auth";
 import { escopoNC, podeEditar } from "@/lib/rbac";
 import type { ActionState } from "./cadastros";
@@ -45,6 +46,13 @@ export async function atualizarNC(
         parsed.data.status === "RESOLVIDA" ? new Date() : null,
     },
   });
+  await registrarAuditoria(
+    sessao,
+    "nc.editar",
+    "NaoConformidade",
+    parsed.data.id,
+    `Atualizou o tratamento da NC (status ${parsed.data.status}, prioridade ${parsed.data.prioridade})`,
+  );
   revalidatePath(`/nao-conformidades/${parsed.data.id}`);
   revalidatePath("/nao-conformidades");
   return { ok: true };
@@ -84,6 +92,13 @@ export async function criarAcao(
     data: { status: "EM_ANDAMENTO" },
   });
 
+  await registrarAuditoria(
+    sessao,
+    "acao.criar",
+    "NaoConformidade",
+    parsed.data.naoConformidadeId,
+    `Adicionou ação corretiva: "${parsed.data.descricao.slice(0, 80)}"`,
+  );
   revalidatePath(`/nao-conformidades/${parsed.data.naoConformidadeId}`);
   return { ok: true };
 }

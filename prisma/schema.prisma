@@ -139,6 +139,7 @@ model Usuario {
   visitasCriadas   Visita[]          @relation("VisitaCriadaPor")
   ncsResponsavel   NaoConformidade[] @relation("NCResponsavel")
   acoesResponsavel Acao[]            @relation("AcaoResponsavel")
+  auditorias       Auditoria[]
 }
 
 // ============ QUESTIONÁRIO (motor de regras parametrizável) ============
@@ -291,6 +292,25 @@ model Resposta {
   observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// Trilha de auditoria: quem alterou o quê e quando (cadastros e ações
+// administrativas). O nome do usuário é snapshot — sobrevive a exclusões.
+model Auditoria {
+  id          String  @id @default(cuid())
+  usuarioId   String?
+  usuarioNome String
+  acao        String // ex.: "meta.criar", "pergunta.editar", "link.revogar"
+  entidade    String // ex.: "Meta", "Pergunta", "Visita"
+  entidadeId  String?
+  resumo      String @db.Text // descrição legível em pt-BR
+
+  criadoEm DateTime @default(now())
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([criadoEm])
+  @@index([entidade, entidadeId])
 }
 
 // Resposta do avaliador NO NÍVEL DA ETAPA (bloco): usada quando a etapa

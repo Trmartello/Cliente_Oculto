@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { exigirPapel } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/auditoria";
 import type { Papel } from "@prisma/client";
 
 export interface ActionState {
@@ -28,7 +29,7 @@ export async function salvarPosto(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const id = (formData.get("id") as string) || null;
   const parsed = postoSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { erro: parsed.error.issues[0].message };
@@ -38,11 +39,12 @@ export async function salvarPosto(
     bandeira: parsed.data.bandeira || null,
     endereco: parsed.data.endereco || null,
   };
+  let postoId = id;
   try {
     if (id) {
       await prisma.posto.update({ where: { id }, data });
     } else {
-      await prisma.posto.create({ data });
+      postoId = (await prisma.posto.create({ data })).id;
     }
   } catch (e: unknown) {
     if ((e as { code?: string }).code === "P2002") {
@@ -50,17 +52,31 @@ export async function salvarPosto(
     }
     throw e;
   }
+  await registrarAuditoria(
+    sessao,
+    id ? "posto.editar" : "posto.criar",
+    "Posto",
+    postoId,
+    `${id ? "Editou" : "Criou"} o posto "${data.nome}" (${data.codigo})`,
+  );
   revalidatePath("/cadastros/postos");
   return { ok: true };
 }
 
 export async function alternarAtivoPosto(id: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const posto = await prisma.posto.findUniqueOrThrow({ where: { id } });
   await prisma.posto.update({
     where: { id },
     data: { ativo: !posto.ativo },
   });
+  await registrarAuditoria(
+    sessao,
+    posto.ativo ? "posto.desativar" : "posto.ativar",
+    "Posto",
+    id,
+    `${posto.ativo ? "Desativou" : "Ativou"} o posto "${posto.nome}"`,
+  );
   revalidatePath("/cadastros/postos");
 }
 
@@ -79,7 +95,7 @@ export async function salvarUsuario(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const id = (formData.get("id") as string) || null;
   const parsed = usuarioSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { erro: parsed.error.issues[0].message };
@@ -105,13 +121,16 @@ export async function salvarUsuario(
     ...(senha ? { senhaHash: await bcrypt.hash(senha, 10) } : {}),
   };
 
+  let usuarioId = id;
   try {
     if (id) {
       await prisma.usuario.update({ where: { id }, data });
     } else {
-      await prisma.usuario.create({
-        data: { ...data, senhaHash: await bcrypt.hash(senha!, 10) },
-      });
+      usuarioId = (
+        await prisma.usuario.create({
+          data: { ...data, senhaHash: await bcrypt.hash(senha!, 10) },
+        })
+      ).id;
     }
   } catch (e: unknown) {
     if ((e as { code?: string }).code === "P2002") {
@@ -119,6 +138,14 @@ export async function salvarUsuario(
     }
     throw e;
   }
+  await registrarAuditoria(
+    sessao,
+    id ? "usuario.editar" : "usuario.criar",
+    "Usuario",
+    usuarioId,
+    `${id ? "Editou" : "Criou"} o usuário "${data.nome}" (${data.email}, perfil ${papel})` +
+      (id && senha ? " — senha redefinida" : ""),
+  );
   revalidatePath("/cadastros/usuarios");
   return { ok: true };
 }
@@ -131,6 +158,13 @@ export async function alternarAtivoUsuario(id: string): Promise<void> {
     where: { id },
     data: { ativo: !usuario.ativo },
   });
+  await registrarAuditoria(
+    sessao,
+    usuario.ativo ? "usuario.desativar" : "usuario.ativar",
+    "Usuario",
+    id,
+    `${usuario.ativo ? "Desativou" : "Ativou"} o usuário "${usuario.nome}" (${usuario.email})`,
+  );
   revalidatePath("/cadastros/usuarios");
 }
 
@@ -148,11 +182,11 @@ export async function salvarMeta(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const parsed = metaSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { erro: "Score mínimo deve estar entre 0 e 100" };
 
-  await prisma.meta.create({
+  const meta = await prisma.meta.create({
     data: {
       postoId: parsed.data.postoId || null,
       blocoNome: parsed.data.blocoNome || null,
@@ -165,12 +199,29 @@ export async function salvarMeta(
         : null,
     },
   });
+  await registrarAuditoria(
+    sessao,
+    "meta.criar",
+    "Meta",
+    meta.id,
+    `Criou meta de score mínimo ${parsed.data.scoreMinimo}` +
+      (parsed.data.blocoNome ? ` para o bloco "${parsed.data.blocoNome}"` : " (score geral)") +
+      (parsed.data.postoId ? " em um posto específico" : " para a rede toda"),
+  );
   revalidatePath("/cadastros/metas");
   return { ok: true };
 }
 
 export async function excluirMeta(id: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
-  await prisma.meta.delete({ where: { id } });
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
+  const meta = await prisma.meta.delete({ where: { id } });
+  await registrarAuditoria(
+    sessao,
+    "meta.excluir",
+    "Meta",
+    id,
+    `Excluiu meta de score mínimo ${Number(meta.scoreMinimo)}` +
+      (meta.blocoNome ? ` do bloco "${meta.blocoNome}"` : " (score geral)"),
+  );
   revalidatePath("/cadastros/metas");
 }

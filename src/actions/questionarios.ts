@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { exigirPapel } from "@/lib/auth";
+import { registrarAuditoria } from "@/lib/auditoria";
 import type { ActionState } from "./cadastros";
 
 /**
@@ -36,13 +37,20 @@ export async function criarQuestionario(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const parsed = questionarioSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { erro: parsed.error.issues[0].message };
 
   const q = await prisma.questionario.create({
     data: { ...parsed.data, descricao: parsed.data.descricao || null },
   });
+  await registrarAuditoria(
+    sessao,
+    "questionario.criar",
+    "Questionario",
+    q.id,
+    `Criou o questionário "${q.nome}"`,
+  );
   redirect(`/cadastros/questionarios/${q.id}`);
 }
 
@@ -50,7 +58,7 @@ export async function salvarConfigQuestionario(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const id = formData.get("id") as string;
   await exigirEditavel(id);
   const parsed = questionarioSchema.safeParse(Object.fromEntries(formData));
@@ -60,6 +68,14 @@ export async function salvarConfigQuestionario(
     where: { id },
     data: { ...parsed.data, descricao: parsed.data.descricao || null },
   });
+  await registrarAuditoria(
+    sessao,
+    "questionario.editar",
+    "Questionario",
+    id,
+    `Alterou configurações do questionário "${parsed.data.nome}" ` +
+      `(penalidade ${parsed.data.penalidadeCriticaTipo} ${parsed.data.penalidadeCriticaValor})`,
+  );
   revalidatePath(`/cadastros/questionarios/${id}`);
   return { ok: true };
 }
@@ -68,21 +84,28 @@ export async function alterarStatusQuestionario(
   id: string,
   status: "RASCUNHO" | "ATIVO" | "ARQUIVADO",
 ): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   if (status === "ATIVO") {
     const blocos = await prisma.bloco.count({
       where: { questionarioId: id, perguntas: { some: {} } },
     });
     if (blocos === 0) return; // não ativa questionário vazio
   }
-  await prisma.questionario.update({ where: { id }, data: { status } });
+  const q = await prisma.questionario.update({ where: { id }, data: { status } });
+  await registrarAuditoria(
+    sessao,
+    "questionario.status",
+    "Questionario",
+    id,
+    `Alterou o status de "${q.nome}" (v${q.versao}) para ${status}`,
+  );
   revalidatePath("/cadastros/questionarios");
   revalidatePath(`/cadastros/questionarios/${id}`);
 }
 
 /** Duplica o questionário como nova versão editável (RASCUNHO). */
 export async function gerarNovaVersao(id: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const original = await prisma.questionario.findUniqueOrThrow({
     where: { id },
     include: { blocos: { include: { perguntas: true }, orderBy: { ordem: "asc" } } },
@@ -122,6 +145,13 @@ export async function gerarNovaVersao(id: string): Promise<void> {
       },
     },
   });
+  await registrarAuditoria(
+    sessao,
+    "questionario.nova_versao",
+    "Questionario",
+    nova.id,
+    `Gerou a versão v${nova.versao} do questionário "${nova.nome}"`,
+  );
   redirect(`/cadastros/questionarios/${nova.id}`);
 }
 
@@ -137,7 +167,7 @@ export async function salvarBloco(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const id = (formData.get("id") as string) || null;
   const parsed = blocoSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { erro: parsed.error.issues[0].message };
@@ -162,15 +192,29 @@ export async function salvarBloco(
       },
     });
   }
+  await registrarAuditoria(
+    sessao,
+    id ? "bloco.editar" : "bloco.criar",
+    "Bloco",
+    id,
+    `${id ? "Editou" : "Criou"} o bloco "${parsed.data.nome}" (peso ${parsed.data.peso}%)`,
+  );
   revalidatePath(`/cadastros/questionarios/${parsed.data.questionarioId}`);
   return { ok: true };
 }
 
 export async function excluirBloco(id: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const bloco = await prisma.bloco.findUniqueOrThrow({ where: { id } });
   await exigirEditavel(bloco.questionarioId);
   await prisma.bloco.delete({ where: { id } });
+  await registrarAuditoria(
+    sessao,
+    "bloco.excluir",
+    "Bloco",
+    id,
+    `Excluiu o bloco "${bloco.nome}" e suas perguntas`,
+  );
   revalidatePath(`/cadastros/questionarios/${bloco.questionarioId}`);
 }
 
@@ -197,7 +241,7 @@ export async function salvarPergunta(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const id = (formData.get("id") as string) || null;
   const parsed = perguntaSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { erro: parsed.error.issues[0].message };
@@ -234,17 +278,33 @@ export async function salvarPergunta(
       data: { ...data, ordem: (ultimo._max.ordem ?? -1) + 1 },
     });
   }
+  await registrarAuditoria(
+    sessao,
+    id ? "pergunta.editar" : "pergunta.criar",
+    "Pergunta",
+    id,
+    `${id ? "Editou" : "Criou"} a pergunta "${data.texto.slice(0, 80)}" ` +
+      `(bloco "${bloco.nome}", peso ${data.peso}, criticidade ${data.criticidade}` +
+      `${data.obrigatoria ? ", requisito" : ""})`,
+  );
   revalidatePath(`/cadastros/questionarios/${bloco.questionarioId}`);
   return { ok: true };
 }
 
 export async function excluirPergunta(id: string): Promise<void> {
-  await exigirPapel("ADMIN", "CONTROLADORIA");
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
   const pergunta = await prisma.pergunta.findUniqueOrThrow({
     where: { id },
     include: { bloco: true },
   });
   await exigirEditavel(pergunta.bloco.questionarioId);
   await prisma.pergunta.delete({ where: { id } });
+  await registrarAuditoria(
+    sessao,
+    "pergunta.excluir",
+    "Pergunta",
+    id,
+    `Excluiu a pergunta "${pergunta.texto.slice(0, 80)}" do bloco "${pergunta.bloco.nome}"`,
+  );
   revalidatePath(`/cadastros/questionarios/${pergunta.bloco.questionarioId}`);
 }
