@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { exigirSessao } from "@/lib/auth";
-import { escopoNC, escopoPosto } from "@/lib/rbac";
+import { escopoNC, escopoPosto, podeEditar } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { moverNC } from "@/actions/ncs";
 import { Badge, PageHeader } from "@/components/ui";
 import {
   COR_PRIORIDADE,
@@ -34,6 +35,7 @@ export default async function NcsPage({
   searchParams: Promise<{ posto?: string; prioridade?: string }>;
 }) {
   const sessao = await exigirSessao();
+  const editor = podeEditar(sessao);
   const { posto, prioridade } = await searchParams;
 
   const where: Prisma.NaoConformidadeWhereInput = {
@@ -118,30 +120,86 @@ export default async function NcsPage({
               </h2>
               <div className="space-y-2">
                 {itens.map((nc) => (
-                  <Link
+                  <div
                     key={nc.id}
-                    href={`/nao-conformidades/${nc.id}`}
-                    className="block rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow"
+                    className="rounded-lg border border-slate-200 bg-white shadow-sm transition hover:shadow"
                   >
-                    <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                      <Badge cor={COR_PRIORIDADE[nc.prioridade]}>
-                        {ROTULO_PRIORIDADE[nc.prioridade]}
-                      </Badge>
-                      <span className="text-xs text-slate-500">
-                        {ROTULO_ORIGEM_NC[nc.origem]}
-                      </span>
-                    </div>
-                    <p className="text-sm font-medium text-slate-800">
-                      {nc.descricao}
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {nc.visita.posto.nome}
-                      {nc.responsavel && ` · ${nc.responsavel.nome}`}
-                      {nc.prazo && ` · prazo ${formatarData(nc.prazo)}`}
-                      {nc._count.acoes > 0 &&
-                        ` · ${nc._count.acoes} ação(ões)`}
-                    </p>
-                  </Link>
+                    <Link
+                      href={`/nao-conformidades/${nc.id}`}
+                      className="block p-3"
+                    >
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <Badge cor={COR_PRIORIDADE[nc.prioridade]}>
+                          {ROTULO_PRIORIDADE[nc.prioridade]}
+                        </Badge>
+                        <span className="text-xs text-slate-500">
+                          {ROTULO_ORIGEM_NC[nc.origem]}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-slate-800">
+                        {nc.descricao}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {nc.visita.posto.nome}
+                        {nc.responsavel && ` · ${nc.responsavel.nome}`}
+                        {nc.prazo && ` · prazo ${formatarData(nc.prazo)}`}
+                        {nc._count.acoes > 0 &&
+                          ` · ${nc._count.acoes} ação(ões)`}
+                      </p>
+                    </Link>
+                    {editor && (
+                      <div className="flex items-center justify-between border-t border-slate-100 px-2 py-1.5">
+                        {coluna.status !== "ABERTA" ? (
+                          <form
+                            action={async () => {
+                              "use server";
+                              await moverNC(
+                                nc.id,
+                                coluna.status === "RESOLVIDA"
+                                  ? "EM_ANDAMENTO"
+                                  : "ABERTA",
+                              );
+                            }}
+                          >
+                            <button
+                              type="submit"
+                              className="rounded-md px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-100"
+                              title="Voltar uma etapa no fluxo"
+                            >
+                              ◀ Voltar
+                            </button>
+                          </form>
+                        ) : (
+                          <span />
+                        )}
+                        {coluna.status !== "RESOLVIDA" ? (
+                          <form
+                            action={async () => {
+                              "use server";
+                              await moverNC(
+                                nc.id,
+                                coluna.status === "ABERTA"
+                                  ? "EM_ANDAMENTO"
+                                  : "RESOLVIDA",
+                              );
+                            }}
+                          >
+                            <button
+                              type="submit"
+                              className="rounded-md px-2 py-0.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                              title="Avançar no fluxo"
+                            >
+                              {coluna.status === "ABERTA"
+                                ? "Iniciar ▶"
+                                : "Resolver ▶"}
+                            </button>
+                          </form>
+                        ) : (
+                          <span />
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ))}
                 {itens.length === 0 && (
                   <p className="px-1 py-2 text-sm text-slate-500">

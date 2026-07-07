@@ -9,6 +9,63 @@ import { escopoNC, podeEditar } from "@/lib/rbac";
 import type { ActionState } from "./cadastros";
 import type { Sessao } from "@/lib/auth";
 
+/**
+ * Move a NC no fluxo conforme a EXECUÇÃO das ações (kanban vivo):
+ * todas as ações finalizadas (≥1 concluída) → RESOLVIDA; alguma ação
+ * reaberta em NC resolvida → volta a EM_ANDAMENTO. CANCELADA não é tocada.
+ */
+async function reconciliarStatusNC(ncId: string): Promise<void> {
+  const nc = await prisma.naoConformidade.findUnique({
+    where: { id: ncId },
+    include: { acoes: { select: { status: true } } },
+  });
+  if (!nc || nc.status === "CANCELADA" || nc.acoes.length === 0) return;
+
+  const abertas = nc.acoes.some(
+    (a) => a.status === "PENDENTE" || a.status === "EM_ANDAMENTO",
+  );
+  const algumaConcluida = nc.acoes.some((a) => a.status === "CONCLUIDA");
+
+  if (!abertas && algumaConcluida && nc.status !== "RESOLVIDA") {
+    await prisma.naoConformidade.update({
+      where: { id: ncId },
+      data: { status: "RESOLVIDA", dataConclusao: new Date() },
+    });
+  } else if (abertas && nc.status === "RESOLVIDA") {
+    await prisma.naoConformidade.update({
+      where: { id: ncId },
+      data: { status: "EM_ANDAMENTO", dataConclusao: null },
+    });
+  }
+}
+
+/** Move manual do card no kanban (botões ◀ ▶). */
+export async function moverNC(
+  ncId: string,
+  status: "ABERTA" | "EM_ANDAMENTO" | "RESOLVIDA",
+): Promise<void> {
+  const sessao = await exigirSessao();
+  if (!podeEditar(sessao)) return;
+  const nc = await ncNoEscopo(sessao, ncId);
+  if (nc.status === status) return;
+  await prisma.naoConformidade.update({
+    where: { id: ncId },
+    data: {
+      status,
+      dataConclusao: status === "RESOLVIDA" ? new Date() : null,
+    },
+  });
+  await registrarAuditoria(
+    sessao,
+    "nc.mover",
+    "NaoConformidade",
+    ncId,
+    `Moveu a NC de ${nc.status} para ${status} no kanban`,
+  );
+  revalidatePath("/nao-conformidades");
+  revalidatePath(`/nao-conformidades/${ncId}`);
+}
+
 async function ncNoEscopo(sessao: Sessao, ncId: string) {
   const nc = await prisma.naoConformidade.findFirst({
     where: { id: ncId, ...escopoNC(sessao) },
@@ -121,5 +178,8 @@ export async function atualizarStatusAcao(
       dataConclusao: status === "CONCLUIDA" ? new Date() : null,
     },
   });
+  // o card do kanban acompanha a execução das ações
+  await reconciliarStatusNC(acao.naoConformidadeId);
   revalidatePath(`/nao-conformidades/${acao.naoConformidadeId}`);
+  revalidatePath("/nao-conformidades");
 }
