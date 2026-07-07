@@ -15,7 +15,7 @@ export function CicloForm({
     salvarCiclo,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   return (
     <>

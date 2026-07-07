@@ -43,7 +43,7 @@ export function ConfigForm({
     salvarConfigQuestionario,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   if (!editavel) {
     return (
@@ -196,7 +196,7 @@ export function BlocoForm({
     salvarBloco,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   return (
     <>
@@ -298,7 +298,7 @@ export function PerguntaForm({
     salvarPergunta,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
   const informativa = tipo === "TEXTO" || tipo === "FOTO";
 
   return (

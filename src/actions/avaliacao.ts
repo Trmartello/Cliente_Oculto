@@ -587,5 +587,96 @@ export async function enviarAvaliacao(
     }
   }
 
+  // Planos de Ação: cada ETAPA com inconsistências (itens reprovados) vira
+  // um problema a tratar; cada item reprovado vira uma INICIATIVA do plano
+  // canônico do posto+etapa — o gestor da unidade desdobra as ações.
+  // Melhor-esforço: falha aqui não derruba o envio.
+  try {
+    const reprovadas = resultado.porPergunta.filter(
+      (p) => p.pontua && p.reprovada,
+    );
+    if (reprovadas.length > 0) {
+      const posto = await prisma.posto.findUniqueOrThrow({
+        where: { id: visita.postoId },
+        select: { nome: true },
+      });
+      const nomeBlocoPorId = new Map(
+        config.blocos.map((b) => [b.id, b.nome]),
+      );
+      const dataStr = new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(agora);
+
+      const porBloco = new Map<string, typeof reprovadas>();
+      for (const item of reprovadas) {
+        porBloco.set(item.blocoId, [
+          ...(porBloco.get(item.blocoId) ?? []),
+          item,
+        ]);
+      }
+
+      for (const [blocoId, itens] of porBloco) {
+        const blocoNome = nomeBlocoPorId.get(blocoId);
+        if (!blocoNome) continue;
+
+        // plano canônico do posto+etapa (o mais antigo; get-or-create)
+        let plano = await prisma.planoAcao.findFirst({
+          where: { postoId: visita.postoId, blocoNome },
+          orderBy: { criadoEm: "asc" },
+        });
+        if (!plano) {
+          plano = await prisma.planoAcao.create({
+            data: {
+              postoId: visita.postoId,
+              blocoNome,
+              problema: `${blocoNome} — ${posto.nome}`,
+              descricao:
+                "Plano gerado automaticamente a partir das inconsistências apontadas nas avaliações desta etapa.",
+            },
+          });
+        } else if (plano.status === "CONCLUIDO") {
+          // problema voltou a aparecer: reabre o plano
+          await prisma.planoAcao.update({
+            where: { id: plano.id },
+            data: { status: "EM_ANDAMENTO" },
+          });
+        }
+
+        for (const item of itens) {
+          // inconsistência já em tratamento (iniciativa aberta) não duplica
+          const aberta = await prisma.iniciativaPlano.findFirst({
+            where: {
+              planoId: plano.id,
+              perguntaId: item.perguntaId,
+              status: { not: "CONCLUIDA" },
+            },
+          });
+          if (aberta) continue;
+          const ordem = await prisma.iniciativaPlano.count({
+            where: { planoId: plano.id },
+          });
+          await prisma.iniciativaPlano.create({
+            data: {
+              planoId: plano.id,
+              titulo: item.texto,
+              descricao:
+                `Inconsistência apontada na avaliação de ${dataStr}: ` +
+                `nota ${item.notaObtida ?? "—"}/${item.notaMaxima} ` +
+                `(criticidade ${item.criticidade}). ` +
+                "Desdobre as ações necessárias para tratar o problema.",
+              perguntaId: item.perguntaId,
+              visitaId: visita.id,
+              ordem,
+            },
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[planos] geração automática de plano de ação:", e);
+  }
+
   redirect("/avaliar/enviado");
 }

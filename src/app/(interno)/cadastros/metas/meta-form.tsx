@@ -17,7 +17,7 @@ export function MetaForm({
     salvarMeta,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   return (
     <>

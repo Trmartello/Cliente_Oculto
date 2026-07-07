@@ -103,3 +103,41 @@ export const ROTULO_ORIGEM_NC: Record<string, string> = {
   SCORE_ABAIXO_META: "Score abaixo da meta",
   MANUAL: "Manual",
 };
+
+// ============ PLANOS DE AÇÃO ============
+
+export const ROTULO_STATUS_ACAO_PLANO: Record<string, string> = {
+  NO_PRAZO: "No prazo",
+  EM_ANDAMENTO: "Em andamento",
+  CONCLUIDA: "Concluída",
+  ATRASADA: "Atrasada",
+  CANCELADA: "Cancelada",
+  PAUSADA: "Pausada",
+  AGUARDANDO_VALIDACAO: "Aguardando validação",
+};
+
+export const COR_STATUS_ACAO_PLANO: Record<string, string> = {
+  NO_PRAZO: "bg-sky-100 text-sky-800",
+  EM_ANDAMENTO: "bg-blue-100 text-blue-800",
+  CONCLUIDA: "bg-emerald-100 text-emerald-800",
+  ATRASADA: "bg-red-100 text-red-700",
+  CANCELADA: "bg-slate-200 text-slate-600",
+  PAUSADA: "bg-amber-100 text-amber-800",
+  AGUARDANDO_VALIDACAO: "bg-purple-100 text-purple-800",
+};
+
+export const ROTULO_STATUS_PLANO: Record<string, string> = {
+  ABERTO: "Aberto",
+  ABERTA: "Aberta",
+  EM_ANDAMENTO: "Em andamento",
+  CONCLUIDO: "Concluído",
+  CONCLUIDA: "Concluída",
+};
+
+export const COR_STATUS_PLANO: Record<string, string> = {
+  ABERTO: "bg-red-100 text-red-700",
+  ABERTA: "bg-red-100 text-red-700",
+  EM_ANDAMENTO: "bg-amber-100 text-amber-800",
+  CONCLUIDO: "bg-emerald-100 text-emerald-800",
+  CONCLUIDA: "bg-emerald-100 text-emerald-800",
+};

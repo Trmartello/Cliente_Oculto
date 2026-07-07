@@ -107,7 +107,7 @@ export function AcaoNovaForm({
     criarAcao,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   return (
     <>

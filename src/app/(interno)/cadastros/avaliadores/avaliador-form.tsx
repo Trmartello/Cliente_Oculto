@@ -15,7 +15,7 @@ export function AvaliadorForm({
     salvarAvaliador,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   return (
     <>

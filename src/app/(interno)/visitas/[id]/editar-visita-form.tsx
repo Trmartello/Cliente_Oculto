@@ -24,7 +24,7 @@ export function EditarVisitaForm({
     redefinirDataVisita,
     {},
   );
-  useFecharAoSalvar(state.ok, () => setAberto(false));
+  useFecharAoSalvar(state, () => setAberto(false));
 
   return (
     <>

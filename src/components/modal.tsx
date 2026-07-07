@@ -64,13 +64,18 @@ export function Modal({
   );
 }
 
-/** Fecha o modal automaticamente quando a server action retorna ok. */
+/**
+ * Fecha o modal automaticamente quando a server action retorna ok.
+ * Depende da IDENTIDADE do estado (useActionState devolve um objeto novo a
+ * cada submit) — assim fecha também na 2ª gravação da mesma instância, em
+ * que `ok` permaneceria true e um dep booleano não redispararia o efeito.
+ */
 export function useFecharAoSalvar(
-  ok: boolean | undefined,
+  estado: { ok?: boolean },
   fechar: () => void,
 ) {
   useEffect(() => {
-    if (ok) fechar();
+    if (estado.ok) fechar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
+  }, [estado]);
 }

@@ -60,8 +60,10 @@ src/lib/
 src/actions/       server actions: auth, cadastros, questionarios, visitas, avaliacao, ncs
 src/app/(publico)/ login, fluxo mobile /avaliar/[token] (wizard) e pesquisa /nps/[token]
 src/app/(interno)/ dashboard (abas CO×Auditoria), visitas (+imprimir), nps,
-                   nao-conformidades, cadastros/* (postos, questionarios,
-                   avaliadores, ciclos, usuarios, metas, auditoria), relatorios
+                   nao-conformidades (kanban acompanha as ações),
+                   planos-de-acao (3 níveis), cadastros/* (postos,
+                   questionarios, avaliadores, ciclos, usuarios, metas,
+                   auditoria), relatorios
 src/app/api/       upload e leitura de evidências, exportações CSV
 src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
 ```
@@ -131,6 +133,32 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
   (`criarObservacao`/`removerObservacao`, posse conferida pelo token). Fotos
   são recomprimidas no aparelho e enviadas a `/api/upload`; perguntas tipo
   FOTO usam o mesmo feed (foto conta como resposta).
+
+## Planos de Ação (3 níveis, estilo BSC)
+
+- `PlanoAcao` (problema) → `IniciativaPlano` (item do checklist com
+  inconsistência) → `AcaoPlano` (tarefa do gestor: responsável, prazo,
+  progresso). Gerados automaticamente no envio: etapa com itens reprovados
+  (razão ≤ 0,4) → plano canônico por **posto+bloco** (get-or-create, o mais
+  antigo; reaberto se concluído); item reprovado → iniciativa com **dedupe
+  por perguntaId** enquanto houver iniciativa não concluída.
+- **Status semi-automático** (`src/lib/planos.ts`): NO_PRAZO/ATRASADA são
+  derivados da data-limite — `sincronizarAcoesAtrasadas()` roda lazy no
+  início das leituras e `resolverStatusAcao()` nas escritas; os manuais
+  (EM_ANDAMENTO/CONCLUIDA/CANCELADA/PAUSADA/AGUARDANDO_VALIDACAO) nunca são
+  sobrescritos. No select da UI o automático aparece travado
+  ("No prazo (automático)") e a edição oferece "Retomar automático".
+  CONCLUIDA força progresso=100 e grava `concluidaEm`.
+- Gestão por escopo (`podeGerirPlanoDoPosto`): GERENTE só o próprio posto,
+  GESTOR_REGIONAL a região; CONSULTA não edita; excluir plano é
+  ADMIN/CONTROLADORIA. Tudo auditado.
+- **Kanban de NCs**: os cards acompanham a execução — todas as ações
+  finalizadas (≥1 concluída) movem a NC para RESOLVIDA automaticamente
+  (`reconciliarStatusNC`); reabrir ação devolve para EM_ANDAMENTO; botões
+  ◀/▶ no card fazem o movimento manual.
+- **`useFecharAoSalvar` depende da IDENTIDADE do estado** (objeto novo por
+  submit), não do booleano `ok` — senão o modal não fecha na 2ª gravação da
+  mesma instância. Não "simplifique" a dependência do efeito.
 
 ## Reenvio de link e reagendamento
 

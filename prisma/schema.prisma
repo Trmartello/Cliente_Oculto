@@ -127,6 +127,7 @@ model Posto {
   metas        Meta[]
   usuarios     Usuario[]
   pesquisasNps PesquisaNps[]
+  planosAcao   PlanoAcao[]
 }
 
 model Usuario {
@@ -146,6 +147,7 @@ model Usuario {
   visitasCriadas   Visita[]          @relation("VisitaCriadaPor")
   ncsResponsavel   NaoConformidade[] @relation("NCResponsavel")
   acoesResponsavel Acao[]            @relation("AcaoResponsavel")
+  acoesPlano       AcaoPlano[]       @relation("AcaoPlanoResponsavel")
   auditorias       Auditoria[]
 }
 
@@ -304,6 +306,94 @@ model Resposta {
   observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// ============ PLANOS DE AÇÃO (3 níveis) ============
+// PlanoAcao (problema) → IniciativaPlano (frente/inconsistência do checklist)
+// → AcaoPlano (tarefa com responsável, prazo e progresso). Gerado
+// automaticamente a partir das inconsistências da avaliação (etapa com
+// itens reprovados) e gerido pelo gestor da unidade.
+
+enum StatusPlanoAcao {
+  ABERTO
+  EM_ANDAMENTO
+  CONCLUIDO
+}
+
+enum StatusIniciativa {
+  ABERTA
+  EM_ANDAMENTO
+  CONCLUIDA
+}
+
+// NO_PRAZO e ATRASADA são AUTOMÁTICOS (derivados da data-limite); os demais
+// são manuais e nunca são sobrescritos pelo automático.
+enum StatusAcaoPlano {
+  NO_PRAZO
+  EM_ANDAMENTO
+  CONCLUIDA
+  ATRASADA
+  CANCELADA
+  PAUSADA
+  AGUARDANDO_VALIDACAO
+}
+
+model PlanoAcao {
+  id        String          @id @default(cuid())
+  postoId   String
+  blocoNome String? // etapa do roteiro; null = plano avulso
+  problema  String // "problema a resolver" — título do plano
+  descricao String?         @db.Text
+  status    StatusPlanoAcao @default(ABERTO)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  posto       Posto             @relation(fields: [postoId], references: [id], onDelete: Cascade)
+  iniciativas IniciativaPlano[]
+
+  @@index([postoId, blocoNome])
+}
+
+model IniciativaPlano {
+  id         String           @id @default(cuid())
+  planoId    String
+  titulo     String // item do checklist com inconsistência
+  descricao  String?          @db.Text
+  perguntaId String? // dedupe: inconsistência já aberta não duplica
+  visitaId   String? // avaliação de origem
+  status     StatusIniciativa @default(ABERTA)
+  ordem      Int              @default(0)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  plano PlanoAcao   @relation(fields: [planoId], references: [id], onDelete: Cascade)
+  acoes AcaoPlano[]
+
+  @@index([planoId])
+}
+
+model AcaoPlano {
+  id              String          @id @default(cuid())
+  iniciativaId    String
+  titulo          String
+  descricao       String?         @db.Text
+  prioridade      Prioridade      @default(MEDIA)
+  status          StatusAcaoPlano @default(NO_PRAZO)
+  dataLimite      DateTime? // dirige NO_PRAZO ↔ ATRASADA
+  responsavelNome String? // responsável fora do sistema (texto livre)
+  responsavelId   String? // ou usuário do sistema
+  progresso       Int             @default(0) // 0-100
+  concluidaEm     DateTime?
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  iniciativa  IniciativaPlano @relation(fields: [iniciativaId], references: [id], onDelete: Cascade)
+  responsavel Usuario?        @relation("AcaoPlanoResponsavel", fields: [responsavelId], references: [id])
+
+  @@index([iniciativaId])
 }
 
 // ============ PESQUISA NPS ============
