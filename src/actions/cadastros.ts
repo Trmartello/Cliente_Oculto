@@ -168,6 +168,68 @@ export async function alternarAtivoUsuario(id: string): Promise<void> {
   revalidatePath("/cadastros/usuarios");
 }
 
+// ============ AVALIADORES ============
+
+const avaliadorSchema = z.object({
+  nome: z.string().trim().min(1, "Informe o nome"),
+  telefone: z.string().trim().optional(),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("E-mail inválido")
+    .optional()
+    .or(z.literal("")),
+});
+
+export async function salvarAvaliador(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
+  const id = (formData.get("id") as string) || null;
+  const parsed = avaliadorSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { erro: parsed.error.issues[0].message };
+
+  const data = {
+    nome: parsed.data.nome,
+    telefone: parsed.data.telefone || null,
+    email: parsed.data.email || null,
+  };
+  let avaliadorId = id;
+  if (id) {
+    await prisma.avaliador.update({ where: { id }, data });
+  } else {
+    avaliadorId = (await prisma.avaliador.create({ data })).id;
+  }
+  await registrarAuditoria(
+    sessao,
+    id ? "avaliador.editar" : "avaliador.criar",
+    "Avaliador",
+    avaliadorId,
+    `${id ? "Editou" : "Cadastrou"} o avaliador "${data.nome}"`,
+  );
+  revalidatePath("/cadastros/avaliadores");
+  return { ok: true };
+}
+
+export async function alternarAtivoAvaliador(id: string): Promise<void> {
+  const sessao = await exigirPapel("ADMIN", "CONTROLADORIA");
+  const avaliador = await prisma.avaliador.findUniqueOrThrow({ where: { id } });
+  await prisma.avaliador.update({
+    where: { id },
+    data: { ativo: !avaliador.ativo },
+  });
+  await registrarAuditoria(
+    sessao,
+    avaliador.ativo ? "avaliador.desativar" : "avaliador.ativar",
+    "Avaliador",
+    id,
+    `${avaliador.ativo ? "Desativou" : "Ativou"} o avaliador "${avaliador.nome}"`,
+  );
+  revalidatePath("/cadastros/avaliadores");
+}
+
 // ============ METAS ============
 
 const metaSchema = z.object({

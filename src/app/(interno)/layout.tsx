@@ -27,6 +27,7 @@ export default async function InternoLayout({
       ? [
           { href: "/cadastros/postos", rotulo: "Postos" },
           { href: "/cadastros/questionarios", rotulo: "Questionários" },
+          { href: "/cadastros/avaliadores", rotulo: "Avaliadores" },
           { href: "/cadastros/usuarios", rotulo: "Usuários" },
           { href: "/cadastros/metas", rotulo: "Metas" },
         ]

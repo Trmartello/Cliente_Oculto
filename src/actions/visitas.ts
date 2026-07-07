@@ -23,6 +23,7 @@ export interface VisitaState {
 const visitaSchema = z.object({
   postoId: z.string().min(1, "Selecione o posto"),
   questionarioId: z.string().min(1, "Selecione o questionário"),
+  avaliadorId: z.string().optional(),
   avaliadorNome: z.string().trim().optional(),
   dataAgendada: z.string().min(1, "Informe a data prevista"),
   validadeDias: z.coerce.number().int().min(1).max(90),
@@ -43,6 +44,20 @@ export async function criarVisita(
     return { erro: "Selecione um questionário ativo" };
   }
 
+  // avaliador cadastrado tem precedência sobre o nome avulso
+  let avaliadorId: string | null = null;
+  let avaliadorNome = parsed.data.avaliadorNome || null;
+  if (parsed.data.avaliadorId) {
+    const avaliador = await prisma.avaliador.findUnique({
+      where: { id: parsed.data.avaliadorId },
+    });
+    if (!avaliador || !avaliador.ativo) {
+      return { erro: "Selecione um avaliador ativo" };
+    }
+    avaliadorId = avaliador.id;
+    avaliadorNome = avaliador.nome;
+  }
+
   const tokenBruto = gerarTokenBruto();
   const expiraEm = new Date(
     Date.now() + parsed.data.validadeDias * 24 * 60 * 60 * 1000,
@@ -53,7 +68,8 @@ export async function criarVisita(
       postoId: parsed.data.postoId,
       questionarioId: parsed.data.questionarioId,
       criadaPorId: sessao.usuarioId,
-      avaliadorNome: parsed.data.avaliadorNome || null,
+      avaliadorId,
+      avaliadorNome,
       dataAgendada: new Date(parsed.data.dataAgendada),
       token: {
         create: {

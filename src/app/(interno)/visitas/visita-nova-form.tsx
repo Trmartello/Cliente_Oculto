@@ -9,9 +9,11 @@ import { LinkAvaliacao } from "./link-avaliacao";
 export function VisitaNovaForm({
   postos,
   questionarios,
+  avaliadores = [],
 }: {
   postos: { id: string; nome: string }[];
   questionarios: { id: string; nome: string }[];
+  avaliadores?: { id: string; nome: string }[];
 }) {
   const [aberto, setAberto] = useState(false);
   // o modal permanece aberto exibindo o link gerado até o usuário dispensá-lo
@@ -94,9 +96,22 @@ export function VisitaNovaForm({
                 className={`mt-1 ${inputCls}`}
               />
             </label>
-            <label className="block text-sm sm:col-span-2">
+            <label className="block text-sm">
               <span className="font-medium text-slate-700">
-                Nome do avaliador (opcional)
+                Avaliador cadastrado
+              </span>
+              <select name="avaliadorId" className={`mt-1 ${inputCls}`}>
+                <option value="">— nenhum —</option>
+                {avaliadores.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="font-medium text-slate-700">
+                ou nome avulso (opcional)
               </span>
               <input name="avaliadorNome" className={`mt-1 ${inputCls}`} />
             </label>

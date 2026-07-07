@@ -42,7 +42,7 @@ export default async function VisitasPage({
   }
   if (posto) where.postoId = posto;
 
-  const [visitas, postos, questionarios] = await Promise.all([
+  const [visitas, postos, questionarios, avaliadores] = await Promise.all([
     prisma.visita.findMany({
       where,
       orderBy: { dataAgendada: "desc" },
@@ -56,6 +56,11 @@ export default async function VisitasPage({
     prisma.questionario.findMany({
       where: { status: "ATIVO" },
       orderBy: [{ nome: "asc" }, { versao: "desc" }],
+    }),
+    prisma.avaliador.findMany({
+      where: { ativo: true },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
     }),
   ]);
 
@@ -77,6 +82,7 @@ export default async function VisitasPage({
               id: q.id,
               nome: `${q.nome} (v${q.versao})`,
             }))}
+            avaliadores={avaliadores}
           />
         </div>
       )}

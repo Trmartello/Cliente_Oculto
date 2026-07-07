@@ -215,7 +215,8 @@ model Visita {
   postoId        String
   questionarioId String
   criadaPorId    String
-  avaliadorNome  String? // o avaliador não possui conta
+  avaliadorNome  String? // nome exibido (avulso ou copiado do cadastro)
+  avaliadorId    String? // avaliador cadastrado (opcional)
   dataAgendada   DateTime
   status         StatusVisita @default(AGENDADA)
   dataInicio     DateTime?
@@ -240,6 +241,7 @@ model Visita {
   posto            Posto             @relation(fields: [postoId], references: [id])
   questionario     Questionario      @relation(fields: [questionarioId], references: [id])
   criadaPor        Usuario           @relation("VisitaCriadaPor", fields: [criadaPorId], references: [id])
+  avaliador        Avaliador?        @relation(fields: [avaliadorId], references: [id])
   token            TokenAcesso?
   respostas        Resposta[]
   blocosRespostas  BlocoResposta[]
@@ -292,6 +294,20 @@ model Resposta {
   observacoes Observacao[]
 
   @@unique([visitaId, perguntaId])
+}
+
+// Banco de avaliadores (clientes ocultos): cadastro próprio com histórico
+// de visitas — a visita pode referenciá-lo ou usar um nome avulso (legado).
+model Avaliador {
+  id       String  @id @default(cuid())
+  nome     String
+  telefone String?
+  email    String?
+  ativo    Boolean @default(true)
+
+  criadoEm DateTime @default(now())
+
+  visitas Visita[]
 }
 
 // Trilha de auditoria: quem alterou o quê e quando (cadastros e ações
