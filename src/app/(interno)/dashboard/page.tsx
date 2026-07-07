@@ -10,11 +10,13 @@ import {
   formatarScore,
 } from "@/lib/formato";
 import {
+  BenchmarkChart,
   BlocosTable,
   EvolucaoChart,
   FiltrosAtivos,
   MatrizChart,
   OportunidadePosto,
+  RadarEtapas,
   RankingChart,
 } from "@/components/dashboard/charts";
 
@@ -223,6 +225,43 @@ export default async function DashboardPage({
                   nome: r.nome,
                   score: r.score,
                 }))}
+                postosSelecionados={postosSel}
+              />
+            </Card>
+          </div>
+
+          <div className="mb-6 grid gap-4 lg:grid-cols-2">
+            <Card>
+              <h2 className="mb-1 font-semibold text-slate-900">
+                Radar por etapa — máximo × aceitável × realizado
+              </h2>
+              <p className="mb-2 text-xs text-slate-500">
+                Pontos de cada etapa no score total: o contorno cinza é o
+                potencial máximo (peso da etapa), o tracejado âmbar é o
+                aceitável pela meta e a área azul é o realizado. Clique no
+                nome da etapa para filtrar o painel.
+              </p>
+              <RadarEtapas
+                dados={dados.scorePorBloco}
+                meta={dados.metaScore ?? 85}
+                blocosSelecionados={blocosSel}
+              />
+            </Card>
+            <Card>
+              <h2 className="mb-1 font-semibold text-slate-900">
+                Benchmark dos postos
+              </h2>
+              <p className="mb-2 text-xs text-slate-500">
+                Realizado de cada posto contra a pontuação máxima possível
+                (100) e o desejável (meta da rede).
+              </p>
+              <BenchmarkChart
+                dados={dados.rankingPostos.map((r) => ({
+                  postoId: r.postoId,
+                  nome: r.nome,
+                  score: r.score,
+                }))}
+                meta={dados.metaScore ?? 85}
                 postosSelecionados={postosSel}
               />
             </Card>

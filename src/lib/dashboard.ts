@@ -59,6 +59,8 @@ export interface DadosDashboard {
     posto: string;
     oportunidades: { nome: string; desempenho: number; impacto: number }[];
   }[];
+  /** Meta de score vigente da rede (score mínimo desejável), se cadastrada. */
+  metaScore: number | null;
 }
 
 function media(valores: number[]): number | null {
@@ -122,7 +124,8 @@ export async function carregarDashboard(
     ? { pergunta: { bloco: { nome: { in: blocosNomes } } } }
     : {};
 
-  const [visitasTodas, ncsAbertas, criticidadeGroups] = await Promise.all([
+  const agora = new Date();
+  const [visitasTodas, ncsAbertas, criticidadeGroups, metaVigente] = await Promise.all([
     prisma.visita.findMany({
       where: wherePeriodo,
       include: { posto: { select: { id: true, nome: true } } },
@@ -147,6 +150,18 @@ export async function carregarDashboard(
         ...filtroBlocoPergunta,
       },
       _count: { _all: true },
+    }),
+    // meta geral da rede vigente (radar/benchmark usam como "aceitável")
+    prisma.meta.findFirst({
+      where: {
+        blocoNome: null,
+        postoId: null,
+        AND: [
+          { OR: [{ vigenciaInicio: null }, { vigenciaInicio: { lte: agora } }] },
+          { OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: agora } }] },
+        ],
+      },
+      orderBy: { criadoEm: "desc" },
     }),
   ]);
 
@@ -333,5 +348,6 @@ export async function carregarDashboard(
     conformidadePorCriticidade,
     matriz,
     oportunidadesPorPosto,
+    metaScore: metaVigente ? Number(metaVigente.scoreMinimo) : null,
   };
 }

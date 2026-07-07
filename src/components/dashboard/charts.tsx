@@ -8,8 +8,14 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
+  Legend,
   Line,
   LineChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -488,6 +494,227 @@ export function BlocosTable({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ============ RADAR POR ETAPA (máximo × aceitável × realizado) ============
+
+export function RadarEtapas({
+  dados,
+  meta,
+  blocosSelecionados = [],
+}: {
+  /** score 0-100 e importância (%) de cada etapa — vindos dos snapshots. */
+  dados: { nome: string; score: number; importancia: number }[];
+  /** Meta de score (%) usada como linha do "aceitável". */
+  meta: number;
+  blocosSelecionados?: string[];
+}) {
+  const { toggle, pendente } = useFiltrosBI();
+  // Pontos da etapa = importância (peso normalizado em %) × desempenho.
+  const serie = dados.map((d) => ({
+    etapa: d.nome,
+    maximo: round1(d.importancia),
+    aceitavel: round1((d.importancia * meta) / 100),
+    realizado: round1((d.importancia * d.score) / 100),
+  }));
+  const teto = Math.max(...serie.map((s) => s.maximo), 1);
+
+  function round1(n: number) {
+    return Math.round(n * 10) / 10;
+  }
+
+  return (
+    <div className={dimPendente(pendente)}>
+      <ResponsiveContainer width="100%" height={320}>
+        <RadarChart data={serie} outerRadius="72%">
+          <PolarGrid stroke={GRID} />
+          <PolarAngleAxis
+            dataKey="etapa"
+            tick={(props) => {
+              const { payload, x, y, textAnchor } = props as unknown as {
+                payload: { value: string };
+                x: number;
+                y: number;
+                textAnchor: string;
+              };
+              const ativo = blocosSelecionados.includes(payload.value);
+              return (
+                <text
+                  x={x}
+                  y={y}
+                  textAnchor={textAnchor as "middle"}
+                  fontSize={11}
+                  fill={ativo ? "#1d4ed8" : TEXTO_MUTED}
+                  fontWeight={ativo ? 700 : 400}
+                  cursor="pointer"
+                  onClick={() => toggle("bloco", payload.value)}
+                >
+                  {payload.value}
+                </text>
+              );
+            }}
+          />
+          <PolarRadiusAxis
+            angle={90}
+            domain={[0, Math.ceil(teto)]}
+            tick={{ fontSize: 10, fill: TEXTO_MUTED }}
+            tickCount={4}
+          />
+          <Tooltip
+            formatter={(v, nome) => [
+              `${Number(v).toFixed(1)} pts`,
+              nome === "maximo"
+                ? "Potencial máximo"
+                : nome === "aceitavel"
+                  ? `Aceitável (meta ${meta.toFixed(0)}%)`
+                  : "Realizado",
+            ]}
+          />
+          <Radar
+            name="maximo"
+            dataKey="maximo"
+            stroke="#94a3b8"
+            strokeDasharray="4 3"
+            fill="#94a3b8"
+            fillOpacity={0.06}
+          />
+          <Radar
+            name="aceitavel"
+            dataKey="aceitavel"
+            stroke="#d97706"
+            strokeDasharray="6 3"
+            fill="#d97706"
+            fillOpacity={0.05}
+          />
+          <Radar
+            name="realizado"
+            dataKey="realizado"
+            stroke={AZUL}
+            strokeWidth={2}
+            fill={AZUL}
+            fillOpacity={0.3}
+          />
+          <Legend
+            formatter={(v) =>
+              v === "maximo"
+                ? "Potencial máximo (peso da etapa)"
+                : v === "aceitavel"
+                  ? `Aceitável (meta ${meta.toFixed(0)}%)`
+                  : "Realizado"
+            }
+            wrapperStyle={{ fontSize: 12 }}
+          />
+        </RadarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ============ BENCHMARK DOS POSTOS (máximo × desejável × realizado) ============
+
+export function BenchmarkChart({
+  dados,
+  meta,
+  postosSelecionados = [],
+}: {
+  dados: { postoId: string; nome: string; score: number }[];
+  /** Meta (desejável) em pontos — o máximo possível é sempre 100. */
+  meta: number;
+  postosSelecionados?: string[];
+}) {
+  const { toggle, pendente } = useFiltrosBI();
+  const altura = Math.max(160, dados.length * 44 + 40);
+  const haSelecao = postosSelecionados.length > 0;
+
+  return (
+    <div className={dimPendente(pendente)}>
+      <ResponsiveContainer width="100%" height={altura}>
+        <BarChart
+          data={dados}
+          layout="vertical"
+          margin={{ top: 8, right: 48, left: 8, bottom: 0 }}
+        >
+          <CartesianGrid stroke={GRID} strokeDasharray="3 3" horizontal={false} />
+          <XAxis
+            type="number"
+            domain={[0, 100]}
+            tick={{ fontSize: 12, fill: TEXTO_MUTED }}
+            axisLine={{ stroke: GRID }}
+            tickLine={false}
+          />
+          <YAxis
+            type="category"
+            dataKey="nome"
+            width={140}
+            tick={{ fontSize: 12, fill: "#334155" }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            formatter={(v) => [Number(v).toFixed(1), "Realizado"]}
+            labelFormatter={(l) =>
+              `${l} — desejável ${meta.toFixed(0)} · máximo 100`
+            }
+          />
+          {/* background = trilho do potencial máximo (100 pontos) */}
+          <Bar
+            dataKey="score"
+            barSize={14}
+            radius={[0, 4, 4, 0]}
+            background={{ fill: "#e2e8f0", radius: 4 }}
+          >
+            <LabelList
+              dataKey="score"
+              position="right"
+              formatter={(v: unknown) => Number(v).toFixed(1)}
+              style={{ fontSize: 12, fill: "#334155", fontWeight: 600 }}
+            />
+            {dados.map((d) => {
+              const apagado = haSelecao && !postosSelecionados.includes(d.postoId);
+              return (
+                <Cell
+                  key={d.postoId}
+                  fill={d.score >= meta ? "#059669" : "#dc2626"}
+                  fillOpacity={apagado ? 0.3 : 1}
+                  cursor="pointer"
+                  onClick={() => toggle("posto", d.postoId)}
+                />
+              );
+            })}
+          </Bar>
+          <ReferenceLine
+            x={meta}
+            stroke="#d97706"
+            strokeDasharray="5 4"
+            label={{
+              value: `desejável ${meta.toFixed(0)}`,
+              position: "insideTopLeft",
+              fill: "#b45309",
+              fontSize: 11,
+            }}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="mt-1 flex flex-wrap gap-4 text-xs text-slate-600">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 rounded bg-[#e2e8f0]" />
+          Máximo possível (100)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-[#d97706]" />
+          Desejável (meta)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 rounded bg-[#059669]" />
+          Realizado ≥ meta
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 rounded bg-[#dc2626]" />
+          Realizado &lt; meta
+        </span>
+      </div>
     </div>
   );
 }
