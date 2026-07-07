@@ -730,11 +730,39 @@ export function AvaliacaoWizard({
     });
   }
 
+  /** GPS do aparelho no momento do envio — opcional, nunca bloqueia. */
+  function capturarGeo(): Promise<
+    { latitude: number; longitude: number; precisaoM: number | null } | null
+  > {
+    return new Promise((resolve) => {
+      if (!("geolocation" in navigator)) return resolve(null);
+      const fim = setTimeout(() => resolve(null), 6000);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          clearTimeout(fim);
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            precisaoM: Number.isFinite(pos.coords.accuracy)
+              ? pos.coords.accuracy
+              : null,
+          });
+        },
+        () => {
+          clearTimeout(fim);
+          resolve(null); // permissão negada/indisponível — envia sem GPS
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 },
+      );
+    });
+  }
+
   function enviar() {
     startTransition(async () => {
+      const geo = await capturarGeo();
       await comitarRascunhos(blocos.flatMap((b) => b.perguntas));
       const todas = blocos.flatMap((b) => rascunhoDo(b));
-      const r = await enviarAvaliacao(token, todas);
+      const r = await enviarAvaliacao(token, todas, geo);
       if (r?.erro) {
         setErro(r.erro);
         window.scrollTo({ top: 0, behavior: "smooth" });

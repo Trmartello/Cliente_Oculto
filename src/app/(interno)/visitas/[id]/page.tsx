@@ -203,6 +203,19 @@ export default async function VisitaDetalhePage({
             <p className="text-xs text-slate-500">
               por {visita.avaliadorNome ?? "avaliador anônimo"}
             </p>
+            {visita.envioLatitude !== null && visita.envioLongitude !== null && (
+              <a
+                href={`https://www.google.com/maps?q=${Number(visita.envioLatitude)},${Number(visita.envioLongitude)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block text-xs font-medium text-blue-700 hover:underline"
+              >
+                📍 Local do envio
+                {visita.envioPrecisaoM !== null
+                  ? ` (±${visita.envioPrecisaoM} m)`
+                  : ""}
+              </a>
+            )}
           </Card>
           <Card>
             <p className="text-xs font-semibold uppercase text-slate-500">

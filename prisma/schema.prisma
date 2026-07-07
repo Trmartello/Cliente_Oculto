@@ -220,6 +220,11 @@ model Visita {
   dataInicio     DateTime?
   dataEnvio      DateTime?
 
+  // ---- Rastreabilidade do envio (GPS opcional, capturado no aparelho) ----
+  envioLatitude  Decimal? @db.Decimal(9, 6)
+  envioLongitude Decimal? @db.Decimal(9, 6)
+  envioPrecisaoM Int? // precisão informada pelo aparelho, em metros
+
   // ---- SNAPSHOT calculado no envio (imutável — histórico independe de
   // mudanças futuras de pesos/perguntas) ----
   scoreFinal      Decimal?   @db.Decimal(5, 2) // 0-100, já com penalidade

@@ -344,9 +344,16 @@ async function metaAplicavel(postoId: string): Promise<number | null> {
  * tudo em transação — snapshots por resposta e na visita, NCs automáticas
  * e token marcado como usado. O histórico fica imutável.
  */
+export interface GeoEnvio {
+  latitude: number;
+  longitude: number;
+  precisaoM: number | null;
+}
+
 export async function enviarAvaliacao(
   token: string,
   respostas: RespostaRascunho[],
+  geo?: GeoEnvio | null,
 ): Promise<AvaliacaoState> {
   const validacao = await validarToken(token);
   if (!validacao.ok) return { erro: "Link inválido ou expirado" };
@@ -479,11 +486,27 @@ export async function enviarAvaliacao(
       });
     }
 
+    // GPS do envio (opcional — avaliador pode negar a permissão)
+    const geoValido =
+      geo &&
+      Number.isFinite(geo.latitude) &&
+      Number.isFinite(geo.longitude) &&
+      Math.abs(geo.latitude) <= 90 &&
+      Math.abs(geo.longitude) <= 180;
+
     await tx.visita.update({
       where: { id: visita.id },
       data: {
         status: "ENVIADA",
         dataEnvio: agora,
+        ...(geoValido
+          ? {
+              envioLatitude: geo.latitude,
+              envioLongitude: geo.longitude,
+              envioPrecisaoM:
+                geo.precisaoM === null ? null : Math.round(geo.precisaoM),
+            }
+          : {}),
         scoreFinal: resultado.scoreFinal,
         scoreBruto: resultado.scoreBruto,
         faixaIgeo: resultado.faixaIgeo,
