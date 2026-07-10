@@ -631,8 +631,10 @@ export function AvaliacaoWizard({
     if (naDe(b.id).naoSeAplica) return []; // etapa não se aplica ao posto
     return b.perguntas.filter((p) => {
       if (!p.obrigatoria) return false;
-      // requisito de foto: exige ao menos uma foto anexada
-      if (p.tipo === "FOTO") return totalFotos(p.id) === 0;
+      // requisito de foto: atendido por foto anexada OU "não se aplica"
+      // (mesma regra do servidor — sem isso o envio trava para sempre)
+      if (p.tipo === "FOTO")
+        return !respostaDe(p.id).naoSeAplica && totalFotos(p.id) === 0;
       const r = respostaDe(p.id);
       return !r.naoSeAplica && (r.valor === null || r.valor.trim() === "");
     });
@@ -661,8 +663,10 @@ export function AvaliacaoWizard({
     });
   }
 
-  /** Converte em observação qualquer rascunho de composer não vazio. */
-  async function comitarRascunhos(perguntas: PerguntaW[]) {
+  /** Converte em observação qualquer rascunho de composer não vazio.
+   *  Retorna false se alguma observação não pôde ser gravada. */
+  async function comitarRascunhos(perguntas: PerguntaW[]): Promise<boolean> {
+    let ok = true;
     for (const p of perguntas) {
       const r = rascunhoDe(p.id);
       if (!r.texto.trim() && r.fotos.length === 0) continue;
@@ -674,8 +678,35 @@ export function AvaliacaoWizard({
           [p.id]: [...(atual[p.id] ?? []), obs],
         }));
         setRascunhos((atual) => ({ ...atual, [p.id]: RASCUNHO_VAZIO }));
+      } else {
+        ok = false; // mantém o rascunho na tela para nova tentativa
       }
     }
+    return ok;
+  }
+
+  const ERRO_SALVAR =
+    "Não foi possível salvar suas respostas (conexão instável ou link expirado). Verifique a internet e tente de novo — nada foi perdido nesta tela.";
+
+  /** Salva a etapa e navega ao hub; em falha, PERMANECE na etapa com aviso
+   *  (autosave silencioso que falha = avaliador perdendo dados sem saber). */
+  function salvarESair(b: BlocoW) {
+    startTransition(async () => {
+      try {
+        const okObs = await comitarRascunhos(b.perguntas);
+        const res = await salvarRascunho(token, rascunhoDo(b));
+        if (!okObs || res.erro) {
+          setErro(res.erro ?? ERRO_SALVAR);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        setTela({ tipo: "hub" });
+        window.scrollTo({ top: 0 });
+      } catch {
+        setErro(ERRO_SALVAR);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
   }
 
   /** Sai da etapa atual salvando tudo (sem validar) e volta ao hub. */
@@ -684,41 +715,43 @@ export function AvaliacaoWizard({
       setTela({ tipo: "hub" });
       return;
     }
-    const b = bloco;
     setErro(null);
-    startTransition(async () => {
-      await comitarRascunhos(b.perguntas);
-      await salvarRascunho(token, rascunhoDo(b));
-      setTela({ tipo: "hub" });
-      window.scrollTo({ top: 0 });
-    });
+    salvarESair(bloco);
   }
 
   /** Conclui a etapa: exige que não haja pendências e volta ao hub. */
   function concluirEtapa() {
     if (!bloco) return;
-    const b = bloco;
-    const pendentes = pendentesDo(b);
+    const pendentes = pendentesDo(bloco);
     if (pendentes.length > 0) {
       setErro(`Responda: ${pendentes[0].texto}`);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
-    startTransition(async () => {
-      await comitarRascunhos(b.perguntas);
-      await salvarRascunho(token, rascunhoDo(b));
-      setTela({ tipo: "hub" });
-      window.scrollTo({ top: 0 });
-    });
+    setErro(null);
+    salvarESair(bloco);
   }
 
-  /** Marca/desmarca a etapa como "não se aplica" (persiste na hora). */
+  /** Marca/desmarca a etapa como "não se aplica" (persiste na hora).
+   *  Se a gravação falhar, desfaz o checkbox e avisa. */
   function alternarNA(b: BlocoW, naoSeAplica: boolean) {
     const atual = naDe(b.id);
     setBlocosNA((m) => ({ ...m, [b.id]: { ...atual, naoSeAplica } }));
     setErro(null);
     startTransition(async () => {
-      await marcarBlocoNaoSeAplica(token, b.id, naoSeAplica, atual.comentario);
+      try {
+        const res = await marcarBlocoNaoSeAplica(
+          token,
+          b.id,
+          naoSeAplica,
+          atual.comentario,
+        );
+        if (res.erro) throw new Error(res.erro);
+      } catch {
+        setBlocosNA((m) => ({ ...m, [b.id]: atual })); // desfaz
+        setErro(ERRO_SALVAR);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     });
   }
 
@@ -726,7 +759,12 @@ export function AvaliacaoWizard({
     const atual = naDe(b.id);
     if (!atual.naoSeAplica) return;
     startTransition(async () => {
-      await marcarBlocoNaoSeAplica(token, b.id, true, comentario);
+      try {
+        const res = await marcarBlocoNaoSeAplica(token, b.id, true, comentario);
+        if (res.erro) throw new Error(res.erro);
+      } catch {
+        setErro(ERRO_SALVAR);
+      }
     });
   }
 
@@ -760,11 +798,32 @@ export function AvaliacaoWizard({
   function enviar() {
     startTransition(async () => {
       const geo = await capturarGeo();
-      await comitarRascunhos(blocos.flatMap((b) => b.perguntas));
+      const okObs = await comitarRascunhos(blocos.flatMap((b) => b.perguntas));
+      if (!okObs) {
+        setErro(ERRO_SALVAR);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return; // não envia com observação pendente de gravação
+      }
       const todas = blocos.flatMap((b) => rascunhoDo(b));
-      const r = await enviarAvaliacao(token, todas, geo);
-      if (r?.erro) {
-        setErro(r.erro);
+      try {
+        const r = await enviarAvaliacao(token, todas, geo);
+        if (r?.erro) {
+          setErro(r.erro);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } catch (e) {
+        // o redirect de sucesso do Next viaja como exceção — deixa passar
+        if (
+          e &&
+          typeof e === "object" &&
+          "digest" in e &&
+          String((e as { digest?: string }).digest).startsWith("NEXT_REDIRECT")
+        ) {
+          throw e;
+        }
+        setErro(
+          "Falha de conexão ao enviar. Suas respostas estão salvas — tente enviar novamente.",
+        );
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     });

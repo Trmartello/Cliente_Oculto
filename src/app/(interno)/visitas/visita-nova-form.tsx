@@ -18,16 +18,19 @@ export function VisitaNovaForm({
   ciclos?: { id: string; nome: string }[];
 }) {
   const [aberto, setAberto] = useState(false);
-  // o modal permanece aberto exibindo o link gerado até o usuário dispensá-lo
-  const [linkDispensado, setLinkDispensado] = useState(false);
+  // o modal permanece aberto exibindo o link gerado até o usuário dispensá-lo;
+  // guardamos O LINK JÁ VISTO (não um booleano) para que, ao reabrir
+  // "+ Nova visita", o formulário volte limpo em vez do link antigo
+  const [linkVisto, setLinkVisto] = useState<string | null>(null);
   const [state, action, pending] = useActionState<VisitaState, FormData>(
     criarVisita,
     {},
   );
+  const mostrarLink = !!state.link && state.link !== linkVisto;
 
   function fechar() {
     setAberto(false);
-    if (state.link) setLinkDispensado(true);
+    if (state.link) setLinkVisto(state.link);
   }
 
   return (
@@ -40,12 +43,12 @@ export function VisitaNovaForm({
         + Nova visita
       </button>
       <Modal
-        aberto={aberto || (!!state.link && !linkDispensado)}
-        titulo={state.link ? "Link do avaliador gerado" : "Nova visita"}
+        aberto={aberto || mostrarLink}
+        titulo={mostrarLink ? "Link do avaliador gerado" : "Nova visita"}
         onFechar={fechar}
         largura="max-w-3xl"
       >
-        {state.link ? (
+        {mostrarLink && state.link ? (
           <LinkAvaliacao link={state.link} />
         ) : (
           <form action={action} className="grid gap-4 sm:grid-cols-2">

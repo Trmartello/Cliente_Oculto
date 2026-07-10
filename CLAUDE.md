@@ -72,8 +72,13 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
 
 - **Snapshot imutável**: no envio, cada `Resposta` e a `Visita` congelam
   `notaObtida`, pesos, `criticidadeSnapshot`, `scoreItem`, `scoreFinal`,
-  `scoresPorBloco` (JSON), `matrizJson`. Mudar pesos depois **não** reescreve o
-  histórico. Um questionário com visitas enviadas é **imutável** → nova versão.
+  `scoresPorBloco` (JSON), `matrizJson` **e** `valorEnviado`/
+  `naoSeAplicaEnviado`/`comentarioEnviado` (+`snapshotEnvioEm`). O autosave da
+  janela de revisão altera só `valor/naoSeAplica/comentario` (rascunho); as
+  telas de histórico (detalhe da visita, imprimir) exibem via
+  `respostaExibida()` de `formato.ts` — nunca leia `valor` cru para exibir
+  visita enviada. Mudar pesos depois **não** reescreve o histórico. Um
+  questionário com visitas enviadas é **imutável** → nova versão.
 - **Motor de score** (`src/domain/score/engine.ts`, testado): nota ponderada por
   pergunta dentro do bloco, blocos ponderados entre si; **falha crítica** quando
   razão da nota ≤ 0,4 numa pergunta CRITICA → penalidade `TETO`/`PERCENTUAL` e NC
@@ -86,9 +91,13 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
   ordem USADO (legado) → REVOGADO → EXPIRADO; expiração é **lazy** (persistida só
   no acesso, sem cron — é por design). **Janela de revisão**: o envio NÃO marca o
   token como usado — visita ENVIADA continua acessível para revisar/reenviar até
-  `expiraEm` (reenvio recalcula snapshots e substitui NCs automáticas; as manuais
-  ficam). Ao expirar, visita ENVIADA permanece ENVIADA (só AGENDADA/EM_ANDAMENTO
-  viram EXPIRADA).
+  `expiraEm`. O reenvio recalcula snapshots e **RECONCILIA** as NCs
+  automáticas (não usa delete+create: a falha que persiste mantém a NC com
+  responsável/status/ações; falha nova cria NC; falha que sumiu só é apagada
+  se a NC estava intocada — as manuais nunca são tocadas). O envio abre com
+  `SELECT ... FOR UPDATE` na visita para serializar duplo tap/retry. Ao
+  expirar, visita ENVIADA permanece ENVIADA (só AGENDADA/EM_ANDAMENTO viram
+  EXPIRADA).
 - **Link público** (`baseUrlPublica()` em `token-avaliacao.ts`): resolve na ordem
   (1) `APP_URL` se **não** for localhost; (2) `x-forwarded-proto/host` (proxy do
   Railway) ou `Host`; (3) fallback dev. **Por isso o link funciona em produção
@@ -144,9 +153,12 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
   por perguntaId** enquanto houver iniciativa não concluída.
 - **Status semi-automático** (`src/lib/planos.ts`): NO_PRAZO/ATRASADA são
   derivados da data-limite — `sincronizarAcoesAtrasadas()` roda lazy no
-  início das leituras e `resolverStatusAcao()` nas escritas; os manuais
+  início das leituras e `resolverStatusAcao()` nas escritas; **só o par
+  NO_PRAZO↔ATRASADA transita sozinho** — os manuais
   (EM_ANDAMENTO/CONCLUIDA/CANCELADA/PAUSADA/AGUARDANDO_VALIDACAO) nunca são
-  sobrescritos. No select da UI o automático aparece travado
+  sobrescritos, nem quando o prazo vence (o atraso aparece pela data em
+  vermelho e no contador de "atrasadas", que usa `acaoVencida` por data, não
+  só o status). No select da UI o automático aparece travado
   ("No prazo (automático)") e a edição oferece "Retomar automático".
   CONCLUIDA força progresso=100 e grava `concluidaEm`.
 - Gestão por escopo (`podeGerirPlanoDoPosto`): GERENTE só o próprio posto,

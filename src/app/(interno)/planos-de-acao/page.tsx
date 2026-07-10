@@ -41,7 +41,7 @@ export default async function PlanosPage({
         iniciativas: {
           select: {
             status: true,
-            acoes: { select: { status: true } },
+            acoes: { select: { status: true, dataLimite: true } },
           },
         },
       },
@@ -122,8 +122,17 @@ export default async function PlanosPage({
         >
           {planos.map((p) => {
             const acoes = p.iniciativas.flatMap((i) => i.acoes);
+            // conta também ação com status MANUAL (ex.: Em andamento) cujo
+            // prazo venceu — o automático nunca sobrescreve o manual, mas o
+            // atraso precisa continuar visível
+            const agora = new Date();
             const atrasadas = acoes.filter(
-              (a) => a.status === "ATRASADA",
+              (a) =>
+                a.status === "ATRASADA" ||
+                (a.dataLimite &&
+                  a.dataLimite < agora &&
+                  a.status !== "CONCLUIDA" &&
+                  a.status !== "CANCELADA"),
             ).length;
             return (
               <tr key={p.id}>

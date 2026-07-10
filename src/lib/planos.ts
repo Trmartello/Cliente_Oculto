@@ -15,10 +15,12 @@ import type { StatusAcaoPlano } from "@prisma/client";
  */
 export async function sincronizarAcoesAtrasadas(): Promise<void> {
   const agora = new Date();
-  // vencidas → ATRASADA
+  // vencidas → ATRASADA (apenas o status AUTOMÁTICO; um "Em andamento"
+  // escolhido pelo gestor nunca é sobrescrito — a data vencida já aparece
+  // em vermelho na tabela)
   await prisma.acaoPlano.updateMany({
     where: {
-      status: { in: ["NO_PRAZO", "EM_ANDAMENTO"] },
+      status: "NO_PRAZO",
       dataLimite: { lt: agora },
     },
     data: { status: "ATRASADA" },
@@ -42,9 +44,9 @@ export function resolverStatusAcao(
   dataLimite: Date | null | undefined,
 ): StatusAcaoPlano {
   const vencida = !!dataLimite && dataLimite < new Date();
-  if ((status === "NO_PRAZO" || status === "EM_ANDAMENTO") && vencida) {
-    return "ATRASADA";
-  }
+  // só o par automático transita sozinho; status manuais (EM_ANDAMENTO,
+  // PAUSADA etc.) são respeitados mesmo com prazo vencido
+  if (status === "NO_PRAZO" && vencida) return "ATRASADA";
   if (status === "ATRASADA" && !vencida) return "NO_PRAZO";
   return status;
 }

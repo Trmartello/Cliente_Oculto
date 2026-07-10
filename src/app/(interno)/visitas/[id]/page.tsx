@@ -21,6 +21,7 @@ import {
   formatarData,
   formatarDataHora,
   formatarScore,
+  respostaExibida,
 } from "@/lib/formato";
 import { NovoLinkForm } from "./novo-link-form";
 import { EditarVisitaForm } from "./editar-visita-form";
@@ -389,6 +390,9 @@ export default async function VisitaDetalhePage({
                 <ul className="divide-y divide-slate-100">
                   {bloco.perguntas.map((p) => {
                     const r = respostaPorPergunta.get(p.id);
+                    // exibe o que foi PONTUADO no envio, não um rascunho de
+                    // revisão eventualmente abandonado depois dele
+                    const ex = r ? respostaExibida(r) : null;
                     return (
                       <li
                         key={p.id}
@@ -396,9 +400,9 @@ export default async function VisitaDetalhePage({
                       >
                         <div className="max-w-xl">
                           <p className="text-slate-800">{p.texto}</p>
-                          {r?.comentario && (
+                          {ex?.comentario && (
                             <p className="mt-0.5 text-xs italic text-slate-500">
-                              “{r.comentario}”
+                              “{ex.comentario}”
                             </p>
                           )}
                           {/* Feed de observações, na ordem de criação */}
@@ -465,9 +469,9 @@ export default async function VisitaDetalhePage({
                             </Badge>
                           )}
                           {p.tipo === "NOTA_1_5" &&
-                          r?.valor &&
-                          !r.naoSeAplica ? (
-                            <EstrelasLidas nota={Number(r.valor)} />
+                          ex?.valor &&
+                          !ex.naoSeAplica ? (
+                            <EstrelasLidas nota={Number(ex.valor)} />
                           ) : (
                             <span
                               className={`font-semibold ${
@@ -475,8 +479,8 @@ export default async function VisitaDetalhePage({
                               }`}
                             >
                               {valorLegivel(
-                                r?.valor ?? null,
-                                r?.naoSeAplica ?? false,
+                                ex?.valor ?? null,
+                                ex?.naoSeAplica ?? false,
                               )}
                             </span>
                           )}

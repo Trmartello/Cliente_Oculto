@@ -141,3 +141,31 @@ export const COR_STATUS_PLANO: Record<string, string> = {
   CONCLUIDO: "bg-emerald-100 text-emerald-800",
   CONCLUIDA: "bg-emerald-100 text-emerald-800",
 };
+
+/**
+ * Valores de uma resposta para EXIBIÇÃO no histórico: prioriza o snapshot
+ * congelado no envio (*Enviado). Um rascunho da janela de revisão que foi
+ * abandonado (autosave sem reenvio) muda só valor/naoSeAplica/comentario e
+ * não pode alterar o que a visita enviada mostra. Visitas anteriores à
+ * criação do snapshot (snapshotEnvioEm null) caem no valor cru (legado).
+ */
+export function respostaExibida<
+  R extends {
+    valor: string | null;
+    naoSeAplica: boolean;
+    comentario: string | null;
+    snapshotEnvioEm: Date | null;
+    valorEnviado: string | null;
+    naoSeAplicaEnviado: boolean;
+    comentarioEnviado: string | null;
+  },
+>(r: R): { valor: string | null; naoSeAplica: boolean; comentario: string | null } {
+  if (r.snapshotEnvioEm) {
+    return {
+      valor: r.valorEnviado,
+      naoSeAplica: r.naoSeAplicaEnviado,
+      comentario: r.comentarioEnviado,
+    };
+  }
+  return { valor: r.valor, naoSeAplica: r.naoSeAplica, comentario: r.comentario };
+}

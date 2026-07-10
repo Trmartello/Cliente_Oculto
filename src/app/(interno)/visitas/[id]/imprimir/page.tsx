@@ -9,6 +9,7 @@ import {
   formatarData,
   formatarDataHora,
   formatarScore,
+  respostaExibida,
 } from "@/lib/formato";
 import { BotaoImprimir } from "./botao-imprimir";
 
@@ -190,6 +191,8 @@ export default async function ImprimirVisitaPage({
               <ul className="mt-2 divide-y divide-slate-100">
                 {bloco.perguntas.map((p) => {
                   const r = respostaPorPergunta.get(p.id);
+                  // valores congelados no envio, não o rascunho de revisão
+                  const ex = r ? respostaExibida(r) : null;
                   return (
                     <li key={p.id} className="py-2 text-sm print:break-inside-avoid">
                       <div className="flex items-start justify-between gap-4">
@@ -202,14 +205,14 @@ export default async function ImprimirVisitaPage({
                           )}
                         </p>
                         <p className={`shrink-0 font-semibold ${r?.reprovada ? "text-red-600" : ""}`}>
-                          {r?.naoSeAplica
+                          {ex?.naoSeAplica
                             ? "Não se aplica"
-                            : valorLegivel(r?.valor ?? null, p.tipo)}
+                            : valorLegivel(ex?.valor ?? null, p.tipo)}
                         </p>
                       </div>
-                      {r?.comentario && (
+                      {ex?.comentario && (
                         <p className="mt-1 text-xs italic text-slate-500">
-                          “{r.comentario}”
+                          “{ex.comentario}”
                         </p>
                       )}
                       {r?.observacoes.map((o) => (

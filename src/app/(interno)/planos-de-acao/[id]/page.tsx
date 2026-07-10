@@ -63,9 +63,18 @@ export default async function PlanoDetalhePage({
     (s, i) => s + i.acoes.length,
     0,
   );
+  // "vencida" independe do status manual: Em andamento com prazo estourado
+  // continua contando (e aparecendo em vermelho), sem sobrescrever o status
+  const agora = new Date();
+  const acaoVencida = (a: { dataLimite: Date | null; status: string }) =>
+    a.status === "ATRASADA" ||
+    (!!a.dataLimite &&
+      a.dataLimite < agora &&
+      a.status !== "CONCLUIDA" &&
+      a.status !== "CANCELADA");
   const atrasadas = plano.iniciativas
     .flatMap((i) => i.acoes)
-    .filter((a) => a.status === "ATRASADA").length;
+    .filter(acaoVencida).length;
 
   return (
     <div>
@@ -216,7 +225,7 @@ export default async function PlanoDetalhePage({
                         </td>
                         <td
                           className={`py-2 pr-4 ${
-                            a.status === "ATRASADA"
+                            acaoVencida(a)
                               ? "font-semibold text-red-600"
                               : "text-slate-600"
                           }`}

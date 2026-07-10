@@ -290,6 +290,14 @@ model Resposta {
   comentario  String? @db.Text
 
   // ---- SNAPSHOT por item, copiado da Pergunta/Bloco no envio ----
+  // O rascunho da janela de revisão (autosave) altera só valor/naoSeAplica/
+  // comentario; o que foi efetivamente pontuado fica congelado nos campos
+  // *Enviado (gravados junto com o score) e é o que o histórico exibe.
+  snapshotEnvioEm    DateTime?
+  valorEnviado       String?  @db.Text
+  naoSeAplicaEnviado Boolean  @default(false)
+  comentarioEnviado  String?  @db.Text
+
   notaObtida           Decimal?     @db.Decimal(5, 2)
   notaMaximaSnapshot   Decimal?     @db.Decimal(5, 2)
   pesoPerguntaSnapshot Decimal?     @db.Decimal(5, 2)

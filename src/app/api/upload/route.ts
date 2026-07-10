@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { obterSessao } from "@/lib/auth";
-import { podeEditar } from "@/lib/rbac";
+import { escopoNC, podeEditar } from "@/lib/rbac";
 import { validarToken } from "@/lib/token-avaliacao";
 import { storage } from "@/lib/storage";
 
@@ -81,7 +81,12 @@ export async function POST(req: NextRequest) {
     if (!sessao || !podeEditar(sessao)) {
       return NextResponse.json({ erro: "Não autorizado" }, { status: 403 });
     }
-    const acao = await prisma.acao.findUnique({ where: { id: acaoId } });
+    // escopo RBAC: a ação precisa pertencer a uma NC do alcance do usuário
+    // (gerente = próprio posto, gestor regional = região) — sem isso seria
+    // possível anexar fotos a ações de qualquer posto conhecendo o id
+    const acao = await prisma.acao.findFirst({
+      where: { id: acaoId, naoConformidade: escopoNC(sessao) },
+    });
     if (!acao) {
       return NextResponse.json({ erro: "Ação inválida" }, { status: 400 });
     }

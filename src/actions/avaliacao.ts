@@ -453,16 +453,32 @@ export async function enviarAvaliacao(
     resultado.porBloco.map((b) => [b.blocoId, b.peso]),
   );
   const agora = new Date();
+  // NCs efetivamente criadas neste envio (novas — não as preservadas de um
+  // envio anterior); alimenta a notificação por e-mail após a transação.
+  const ncsNovas: typeof resultado.ncsACriar = [];
 
   await prisma.$transaction(async (tx) => {
+    // Serializa envios simultâneos do mesmo token (duplo tap / retry de
+    // rede): o segundo espera o primeiro commitar e reconcilia sobre o
+    // resultado já gravado, sem duplicar NCs.
+    await tx.$queryRaw`SELECT id FROM Visita WHERE id = ${visita.id} FOR UPDATE`;
+
     for (const r of respostas) {
       const calc = resultadoPorPergunta.get(r.perguntaId);
       const blocoId = calc?.blocoId;
+      const valorFinal = perguntasEmBlocoNA.has(r.perguntaId) ? null : r.valor;
+      const naFinal = perguntasEmBlocoNA.has(r.perguntaId) || r.naoSeAplica;
       const snapshot = {
         // pergunta dentro de etapa N/A é gravada como não se aplica
-        valor: perguntasEmBlocoNA.has(r.perguntaId) ? null : r.valor,
-        naoSeAplica: perguntasEmBlocoNA.has(r.perguntaId) || r.naoSeAplica,
+        valor: valorFinal,
+        naoSeAplica: naFinal,
         comentario: r.comentario,
+        // congela o que foi pontuado — um rascunho de revisão abandonado
+        // (autosave sem reenvio) não muda o que o histórico exibe
+        snapshotEnvioEm: agora,
+        valorEnviado: valorFinal,
+        naoSeAplicaEnviado: naFinal,
+        comentarioEnviado: r.comentario,
         notaObtida: calc?.notaObtida ?? null,
         notaMaximaSnapshot: calc?.notaMaxima ?? null,
         pesoPerguntaSnapshot: calc?.peso ?? null,
@@ -517,25 +533,55 @@ export async function enviarAvaliacao(
       },
     });
 
-    // Reenvio dentro da janela de revisão: as NCs automáticas anteriores
-    // são substituídas pelas do novo resultado (as manuais permanecem).
-    await tx.naoConformidade.deleteMany({
+    // Reenvio dentro da janela de revisão: RECONCILIA as NCs automáticas —
+    // a falha que persiste mantém a NC existente (com responsável, prazo,
+    // status e ações corretivas já definidos); falha nova cria NC; falha que
+    // desapareceu só remove a NC se ela ainda não recebeu nenhum tratamento
+    // (as manuais nunca são tocadas).
+    const ncsExistentes = await tx.naoConformidade.findMany({
       where: {
         visitaId: visita.id,
         origem: { in: ["FALHA_CRITICA", "SCORE_ABAIXO_META"] },
       },
+      include: { _count: { select: { acoes: true } } },
     });
+    const chaveNC = (origem: string, perguntaId?: string | null) =>
+      `${origem}:${perguntaId ?? ""}`;
+    const semCorrespondencia = new Map(
+      ncsExistentes.map((nc) => [chaveNC(nc.origem, nc.perguntaId), nc]),
+    );
     for (const nc of resultado.ncsACriar) {
-      await tx.naoConformidade.create({
-        data: {
-          visitaId: visita.id,
-          perguntaId: nc.perguntaId,
-          origem: nc.origem,
-          descricao: nc.descricao,
-          prioridade: nc.prioridade,
-          prazo: new Date(agora.getTime() + 15 * 24 * 60 * 60 * 1000),
-        },
-      });
+      const existente = semCorrespondencia.get(chaveNC(nc.origem, nc.perguntaId));
+      if (existente) {
+        semCorrespondencia.delete(chaveNC(nc.origem, nc.perguntaId));
+        // atualiza o conteúdo (nota/descrição podem ter mudado no reenvio)
+        // preservando status, responsável, prazo e ações
+        await tx.naoConformidade.update({
+          where: { id: existente.id },
+          data: { descricao: nc.descricao, prioridade: nc.prioridade },
+        });
+      } else {
+        ncsNovas.push(nc);
+        await tx.naoConformidade.create({
+          data: {
+            visitaId: visita.id,
+            perguntaId: nc.perguntaId,
+            origem: nc.origem,
+            descricao: nc.descricao,
+            prioridade: nc.prioridade,
+            prazo: new Date(agora.getTime() + 15 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+    }
+    for (const nc of semCorrespondencia.values()) {
+      const intocada =
+        nc._count.acoes === 0 && nc.status === "ABERTA" && !nc.responsavelId;
+      if (intocada) {
+        await tx.naoConformidade.delete({ where: { id: nc.id } });
+      }
+      // NC com tratamento em curso permanece para decisão humana, mesmo que
+      // a falha não tenha se confirmado no reenvio.
     }
 
     // O token permanece ATIVO até expirar: dentro da validade o avaliador
@@ -547,9 +593,10 @@ export async function enviarAvaliacao(
     });
   });
 
-  // Notificação por e-mail das NCs automáticas (melhor-esforço; requer
-  // SMTP_* configurado — sem isso vira apenas log).
-  if (resultado.ncsACriar.length > 0) {
+  // Notificação por e-mail das NCs automáticas NOVAS deste envio (as
+  // preservadas de um envio anterior já foram notificadas). Melhor-esforço;
+  // requer SMTP_* configurado — sem isso vira apenas log.
+  if (ncsNovas.length > 0) {
     try {
       const [posto, interessados] = await Promise.all([
         prisma.posto.findUnique({
@@ -568,12 +615,12 @@ export async function enviarAvaliacao(
         }),
       ]);
       const base = await baseUrlPublica();
-      const lista = resultado.ncsACriar
+      const lista = ncsNovas
         .map((nc) => `<li>${nc.descricao}</li>`)
         .join("");
       await enviarEmail(
         interessados.map((u) => u.email),
-        `⚠ ${resultado.ncsACriar.length} Não Conformidade(s) — ${posto?.nome ?? "posto"}`,
+        `⚠ ${ncsNovas.length} Não Conformidade(s) — ${posto?.nome ?? "posto"}`,
         `<p>A avaliação de cliente oculto do posto
            <strong>${posto?.nome ?? ""} (${posto?.cidade ?? ""}/${posto?.uf ?? ""})</strong>
            abriu as seguintes não conformidades:</p>
