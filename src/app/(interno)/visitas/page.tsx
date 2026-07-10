@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { exigirSessao } from "@/lib/auth";
-import { podeAdministrar, escopoVisita } from "@/lib/rbac";
+import { podeAdministrar, escopoPosto, escopoVisita } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { Badge, PageHeader, Tabela } from "@/components/ui";
+import { Badge, Card, PageHeader, Tabela } from "@/components/ui";
+import { Paginacao, paginaAtual } from "@/components/paginacao";
 import {
   COR_FAIXA,
   COR_STATUS_VISITA,
@@ -27,14 +28,17 @@ const STATUS_VALIDOS = [
   "CANCELADA",
 ] as const;
 
+const POR_PAGINA = 50;
+
 export default async function VisitasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; posto?: string }>;
+  searchParams: Promise<{ status?: string; posto?: string; pagina?: string }>;
 }) {
   const sessao = await exigirSessao();
-  const { status, posto } = await searchParams;
+  const { status, posto, pagina: paginaBruta } = await searchParams;
   const admin = podeAdministrar(sessao);
+  const pagina = paginaAtual(paginaBruta);
 
   const where: Prisma.VisitaWhereInput = { ...escopoVisita(sessao) };
   if (status && (STATUS_VALIDOS as readonly string[]).includes(status)) {
@@ -42,15 +46,19 @@ export default async function VisitasPage({
   }
   if (posto) where.postoId = posto;
 
-  const [visitas, postos, questionarios, avaliadores, ciclos] = await Promise.all([
+  const [visitas, total, postos, questionarios, avaliadores, ciclos] = await Promise.all([
     prisma.visita.findMany({
       where,
       orderBy: { dataAgendada: "desc" },
-      take: 200,
+      skip: (pagina - 1) * POR_PAGINA,
+      take: POR_PAGINA,
       include: { posto: true, token: true },
     }),
+    prisma.visita.count({ where }),
+    // o filtro só lista postos do ALCANCE do usuário (gerente não vê os
+    // nomes dos demais postos da rede)
     prisma.posto.findMany({
-      where: { ativo: true, ...(admin ? {} : {}) },
+      where: { ativo: true, ...escopoPosto(sessao) },
       orderBy: { nome: "asc" },
     }),
     prisma.questionario.findMany({
@@ -186,7 +194,7 @@ export default async function VisitasPage({
                   )}
                 </div>
               ) : v.token ? (
-                v.token.status.toLowerCase()
+                (ROTULO_STATUS_TOKEN[v.token.status] ?? v.token.status)
               ) : (
                 "—"
               )}
@@ -194,6 +202,26 @@ export default async function VisitasPage({
           </tr>
         ))}
       </Tabela>
+      {visitas.length === 0 && (
+        <Card className="mt-4">
+          <p className="text-sm text-slate-600">
+            Nenhuma visita encontrada com os filtros atuais.
+          </p>
+        </Card>
+      )}
+      <Paginacao
+        total={total}
+        pagina={pagina}
+        porPagina={POR_PAGINA}
+        params={{ status, posto }}
+      />
     </div>
   );
 }
+
+const ROTULO_STATUS_TOKEN: Record<string, string> = {
+  ATIVO: "Ativo",
+  USADO: "Usado",
+  REVOGADO: "Revogado",
+  EXPIRADO: "Expirado",
+};

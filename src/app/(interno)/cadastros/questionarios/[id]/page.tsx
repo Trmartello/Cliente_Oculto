@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { exigirPapel } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { excluirBloco, excluirPergunta } from "@/actions/questionarios";
+import { FormConfirmar } from "@/components/confirmar";
 import { Badge, Card, PageHeader, btnPerigo } from "@/components/ui";
 import {
   COR_CRITICIDADE,
@@ -125,11 +126,14 @@ export default async function QuestionarioBuilderPage({
                         peso: Number(bloco.peso),
                       }}
                     />
-                    <form action={excluirBloco.bind(null, bloco.id)}>
+                    <FormConfirmar
+                      action={excluirBloco.bind(null, bloco.id)}
+                      mensagem={`Excluir a etapa "${bloco.nome}"? Todas as perguntas dela serão apagadas junto.`}
+                    >
                       <button type="submit" className={btnPerigo}>
                         Excluir bloco
                       </button>
-                    </form>
+                    </FormConfirmar>
                   </div>
                 )}
               </div>
@@ -182,13 +186,14 @@ export default async function QuestionarioBuilderPage({
                                     permiteNaoSeAplica: p.permiteNaoSeAplica,
                                   }}
                                 />
-                                <form
+                                <FormConfirmar
                                   action={excluirPergunta.bind(null, p.id)}
+                                  mensagem="Excluir esta pergunta do questionário?"
                                 >
                                   <button type="submit" className={btnPerigo}>
                                     Excluir
                                   </button>
-                                </form>
+                                </FormConfirmar>
                               </div>
                             </td>
                           )}

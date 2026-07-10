@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { exigirSessao } from "@/lib/auth";
 import { escopoNC, podeEditar } from "@/lib/rbac";
+import { dataPrazo } from "@/lib/prazos";
 import type { ActionState } from "./cadastros";
 import type { Sessao } from "@/lib/auth";
 
@@ -92,15 +93,22 @@ export async function atualizarNC(
   if (!parsed.success) return { erro: "Dados inválidos" };
   await ncNoEscopo(sessao, parsed.data.id);
 
+  const atual = await prisma.naoConformidade.findUniqueOrThrow({
+    where: { id: parsed.data.id },
+    select: { dataConclusao: true },
+  });
   await prisma.naoConformidade.update({
     where: { id: parsed.data.id },
     data: {
       prioridade: parsed.data.prioridade,
       status: parsed.data.status,
       responsavelId: parsed.data.responsavelId || null,
-      prazo: parsed.data.prazo ? new Date(parsed.data.prazo) : null,
+      prazo: parsed.data.prazo ? dataPrazo(parsed.data.prazo) : null,
+      // editar uma NC já resolvida não reescreve a data de conclusão
       dataConclusao:
-        parsed.data.status === "RESOLVIDA" ? new Date() : null,
+        parsed.data.status === "RESOLVIDA"
+          ? (atual.dataConclusao ?? new Date())
+          : null,
     },
   });
   await registrarAuditoria(
@@ -138,7 +146,7 @@ export async function criarAcao(
       naoConformidadeId: parsed.data.naoConformidadeId,
       descricao: parsed.data.descricao,
       responsavelId: parsed.data.responsavelId || null,
-      prazo: parsed.data.prazo ? new Date(parsed.data.prazo) : null,
+      prazo: parsed.data.prazo ? dataPrazo(parsed.data.prazo) : null,
       prioridade: parsed.data.prioridade,
     },
   });

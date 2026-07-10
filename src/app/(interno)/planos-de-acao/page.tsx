@@ -3,6 +3,7 @@ import { exigirSessao } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { escopoPosto, podeEditar } from "@/lib/rbac";
 import { sincronizarAcoesAtrasadas } from "@/lib/planos";
+import { prazoVencido } from "@/lib/prazos";
 import { Badge, Card, PageHeader, Tabela } from "@/components/ui";
 import {
   COR_STATUS_PLANO,
@@ -10,17 +11,21 @@ import {
   formatarData,
 } from "@/lib/formato";
 import { PlanoNovoForm } from "./planos-forms";
+import { Paginacao, paginaAtual } from "@/components/paginacao";
 import type { Prisma } from "@prisma/client";
 
 export const metadata = { title: "Planos de Ação — Cliente Oculto" };
 
+const POR_PAGINA = 50;
+
 export default async function PlanosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ posto?: string; status?: string }>;
+  searchParams: Promise<{ posto?: string; status?: string; pagina?: string }>;
 }) {
   const sessao = await exigirSessao();
-  const { posto, status } = await searchParams;
+  const { posto, status, pagina: paginaBruta } = await searchParams;
+  const pagina = paginaAtual(paginaBruta);
 
   // status "No prazo/Atrasada" se corrige na leitura (lazy, sem cron)
   await sincronizarAcoesAtrasadas();
@@ -33,7 +38,7 @@ export default async function PlanosPage({
       : {}),
   };
 
-  const [planos, postos] = await Promise.all([
+  const [planos, total, postos] = await Promise.all([
     prisma.planoAcao.findMany({
       where,
       include: {
@@ -46,8 +51,10 @@ export default async function PlanosPage({
         },
       },
       orderBy: [{ status: "asc" }, { atualizadoEm: "desc" }],
-      take: 200,
+      skip: (pagina - 1) * POR_PAGINA,
+      take: POR_PAGINA,
     }),
+    prisma.planoAcao.count({ where }),
     prisma.posto.findMany({
       where: { ativo: true, ...escopoPosto(sessao) },
       orderBy: { nome: "asc" },
@@ -125,12 +132,10 @@ export default async function PlanosPage({
             // conta também ação com status MANUAL (ex.: Em andamento) cujo
             // prazo venceu — o automático nunca sobrescreve o manual, mas o
             // atraso precisa continuar visível
-            const agora = new Date();
             const atrasadas = acoes.filter(
               (a) =>
                 a.status === "ATRASADA" ||
-                (a.dataLimite &&
-                  a.dataLimite < agora &&
+                (prazoVencido(a.dataLimite) &&
                   a.status !== "CONCLUIDA" &&
                   a.status !== "CANCELADA"),
             ).length;
@@ -176,6 +181,12 @@ export default async function PlanosPage({
           })}
         </Tabela>
       )}
+      <Paginacao
+        total={total}
+        pagina={pagina}
+        porPagina={POR_PAGINA}
+        params={{ posto, status }}
+      />
     </div>
   );
 }

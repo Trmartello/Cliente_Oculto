@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { salvarPosto, type ActionState } from "@/actions/cadastros";
 import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
@@ -19,26 +19,39 @@ interface PostoDados {
 
 export function PostoForm({ posto }: { posto: PostoDados | null }) {
   const router = useRouter();
+  const [aberto, setAberto] = useState(!!posto);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     async (prev, fd) => {
       const r = await salvarPosto(prev, fd);
-      if (r.ok) router.push("/cadastros/postos");
+      if (r.ok) {
+        setAberto(false);
+        router.push("/cadastros/postos");
+      }
       return r;
     },
     {},
   );
 
-  const [aberto, setAberto] = useState(!!posto);
+  // ?editar=<id> na URL (re)abre o modal; fechar sem salvar LIMPA a URL —
+  // sem isso o botão fica preso em "Editando: X" e o link Editar da mesma
+  // linha para de responder
+  useEffect(() => {
+    if (posto) setAberto(true);
+  }, [posto]);
+  function fechar() {
+    setAberto(false);
+    if (posto) router.push("/cadastros/postos");
+  }
 
   return (
     <>
       <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
-        {posto ? `Editando: ${posto.nome}` : "+ Novo posto"}
+        {posto && aberto ? `Editando: ${posto.nome}` : "+ Novo posto"}
       </button>
       <Modal
         aberto={aberto}
         titulo={posto ? `Editar posto — ${posto.nome}` : "Novo posto"}
-        onFechar={() => setAberto(false)}
+        onFechar={fechar}
       >
         <form action={action} className="grid gap-4 sm:grid-cols-3">
           {posto && <input type="hidden" name="id" value={posto.id} />}
@@ -109,7 +122,7 @@ export function PostoForm({ posto }: { posto: PostoDados | null }) {
             <p className="text-sm text-red-600 sm:col-span-3">{state.erro}</p>
           )}
           <div className="flex justify-end gap-2 border-t border-slate-100 pt-4 sm:col-span-3">
-            <button type="button" onClick={() => setAberto(false)} className={btnSecundario}>
+            <button type="button" onClick={fechar} className={btnSecundario}>
               Cancelar
             </button>
             <button type="submit" disabled={pending} className={btnPrimario}>

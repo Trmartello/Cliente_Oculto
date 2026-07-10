@@ -272,11 +272,18 @@ export function AcaoPlanoForm({
   const statusAtual = acao?.status ?? "NO_PRAZO";
   const automatico = AUTOMATICOS.includes(statusAtual);
 
+  // re-sincroniza o slider a cada abertura — o servidor pode ter alterado o
+  // progresso (ex.: CONCLUIDA força 100) desde a última gravação
+  function abrir() {
+    setProgresso(acao?.progresso ?? 0);
+    setAberto(true);
+  }
+
   return (
     <>
       <button
         type="button"
-        onClick={() => setAberto(true)}
+        onClick={abrir}
         className={acao ? "text-xs font-medium text-blue-700 underline" : btnSecundario}
       >
         {acao ? "editar" : "+ Ação"}

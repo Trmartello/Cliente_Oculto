@@ -25,6 +25,7 @@ import {
 } from "@/lib/formato";
 import { NovoLinkForm } from "./novo-link-form";
 import { EditarVisitaForm } from "./editar-visita-form";
+import { FormConfirmar } from "@/components/confirmar";
 import { CompartilharLink } from "../compartilhar-link";
 import { mensagemConvite } from "../convite";
 
@@ -297,17 +298,23 @@ export default async function VisitaDetalhePage({
           <div className="flex flex-wrap items-start gap-3">
             <NovoLinkForm visitaId={visita.id} />
             {visita.token?.status === "ATIVO" && (
-              <form action={revogarLink.bind(null, visita.id)}>
+              <FormConfirmar
+                action={revogarLink.bind(null, visita.id)}
+                mensagem="Revogar o link do avaliador? O link atual deixa de funcionar na hora e não pode ser reativado (gere um novo depois, se precisar)."
+              >
                 <button type="submit" className={btnPerigo}>
                   Revogar link
                 </button>
-              </form>
+              </FormConfirmar>
             )}
-            <form action={cancelarVisita.bind(null, visita.id)}>
+            <FormConfirmar
+              action={cancelarVisita.bind(null, visita.id)}
+              mensagem="Cancelar esta visita? O link do avaliador é revogado e a visita sai do fluxo de avaliação."
+            >
               <button type="submit" className={btnPerigo}>
                 Cancelar visita
               </button>
-            </form>
+            </FormConfirmar>
           </div>
         </Card>
       )}

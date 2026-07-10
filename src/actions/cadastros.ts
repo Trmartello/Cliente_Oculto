@@ -102,7 +102,8 @@ export async function salvarUsuario(
 
   const { senha, ...resto } = parsed.data;
   const papel = resto.papel as Papel;
-  if (!id && (!senha || senha.length < 6)) {
+  // mínimo vale na criação E na redefinição (edição com campo vazio = mantém)
+  if ((!id || senha) && (!senha || senha.length < 6)) {
     return { erro: "A senha deve ter pelo menos 6 caracteres" };
   }
   if (papel === "GERENTE" && !resto.postoId) {

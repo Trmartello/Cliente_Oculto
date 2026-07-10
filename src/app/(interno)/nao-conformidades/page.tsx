@@ -29,14 +29,20 @@ const COLUNAS = [
   },
 ] as const;
 
+const LIMITE_PADRAO = 300;
+
 export default async function NcsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ posto?: string; prioridade?: string }>;
+  searchParams: Promise<{ posto?: string; prioridade?: string; limite?: string }>;
 }) {
   const sessao = await exigirSessao();
   const editor = podeEditar(sessao);
-  const { posto, prioridade } = await searchParams;
+  const { posto, prioridade, limite: limiteBruto } = await searchParams;
+  const limite =
+    Number.isInteger(Number(limiteBruto)) && Number(limiteBruto) > 0
+      ? Math.min(Number(limiteBruto), 5000)
+      : LIMITE_PADRAO;
 
   const where: Prisma.NaoConformidadeWhereInput = {
     ...escopoNC(sessao),
@@ -46,17 +52,29 @@ export default async function NcsPage({
       ? { prioridade: prioridade as Prisma.NaoConformidadeWhereInput["prioridade"] }
       : {}),
   };
+  const whereKanban: Prisma.NaoConformidadeWhereInput = {
+    ...where,
+    status: { not: "CANCELADA" },
+  };
 
-  const [ncs, postos] = await Promise.all([
+  const [ncs, totalKanban, canceladas, postos] = await Promise.all([
     prisma.naoConformidade.findMany({
-      where,
+      where: whereKanban,
       include: {
         visita: { include: { posto: { select: { nome: true } } } },
         responsavel: { select: { nome: true } },
         _count: { select: { acoes: true } },
       },
       orderBy: [{ prioridade: "desc" }, { criadoEm: "desc" }],
-      take: 300,
+      take: limite,
+    }),
+    prisma.naoConformidade.count({ where: whereKanban }),
+    // canceladas não somem do sistema: ficam numa seção própria
+    prisma.naoConformidade.findMany({
+      where: { ...where, status: "CANCELADA" },
+      include: { visita: { include: { posto: { select: { nome: true } } } } },
+      orderBy: { criadoEm: "desc" },
+      take: 50,
     }),
     prisma.posto.findMany({
       where: { ativo: true, ...escopoPosto(sessao) },
@@ -211,6 +229,47 @@ export default async function NcsPage({
           );
         })}
       </div>
+
+      {totalKanban > ncs.length && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+          <p>
+            Mostrando as {ncs.length} NCs mais prioritárias de {totalKanban}.
+          </p>
+          <Link
+            href={`?${new URLSearchParams({
+              ...(posto ? { posto } : {}),
+              ...(prioridade ? { prioridade } : {}),
+              limite: String(limite * 2),
+            })}`}
+            className="font-medium text-blue-700 hover:underline"
+          >
+            Mostrar mais
+          </Link>
+        </div>
+      )}
+
+      {canceladas.length > 0 && (
+        <details className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+            Canceladas ({canceladas.length}
+            {canceladas.length === 50 ? "+" : ""})
+          </summary>
+          <ul className="mt-2 space-y-1.5">
+            {canceladas.map((nc) => (
+              <li key={nc.id} className="text-sm">
+                <Link
+                  href={`/nao-conformidades/${nc.id}`}
+                  className="text-slate-600 hover:text-blue-700 hover:underline"
+                >
+                  <span className="font-medium">{nc.visita.posto.nome}</span>
+                  {" — "}
+                  {nc.descricao}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

@@ -96,15 +96,22 @@ export default async function QuestionariosPage() {
               <td className="px-4 py-3">{q._count.visitas}</td>
               <td className="px-4 py-3">
                 <div className="flex flex-wrap gap-2">
-                  {q.status !== "ATIVO" && q.blocos.length > 0 && (
-                    <form
-                      action={alterarStatusQuestionario.bind(null, q.id, "ATIVO")}
-                    >
-                      <button type="submit" className={btnSecundario}>
-                        Ativar
-                      </button>
-                    </form>
-                  )}
+                  {q.status !== "ATIVO" &&
+                    (totalPerguntas > 0 ? (
+                      <form
+                        action={alterarStatusQuestionario.bind(null, q.id, "ATIVO")}
+                      >
+                        <button type="submit" className={btnSecundario}>
+                          Ativar
+                        </button>
+                      </form>
+                    ) : (
+                      // o servidor ignora a ativação sem perguntas — em vez
+                      // de um botão que "não faz nada", explica o que falta
+                      <span className="text-xs text-slate-400">
+                        adicione perguntas para ativar
+                      </span>
+                    ))}
                   {q.status === "ATIVO" && (
                     <form
                       action={alterarStatusQuestionario.bind(

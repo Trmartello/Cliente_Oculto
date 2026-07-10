@@ -7,7 +7,9 @@ import {
   podeGerirPlanoDoPosto,
   sincronizarAcoesAtrasadas,
 } from "@/lib/planos";
+import { prazoVencido } from "@/lib/prazos";
 import { excluirAcaoPlano, excluirIniciativa, excluirPlano } from "@/actions/planos";
+import { FormConfirmar } from "@/components/confirmar";
 import { Badge, Card, PageHeader, btnSecundario } from "@/components/ui";
 import {
   COR_PRIORIDADE,
@@ -65,11 +67,9 @@ export default async function PlanoDetalhePage({
   );
   // "vencida" independe do status manual: Em andamento com prazo estourado
   // continua contando (e aparecendo em vermelho), sem sobrescrever o status
-  const agora = new Date();
   const acaoVencida = (a: { dataLimite: Date | null; status: string }) =>
     a.status === "ATRASADA" ||
-    (!!a.dataLimite &&
-      a.dataLimite < agora &&
+    (prazoVencido(a.dataLimite) &&
       a.status !== "CONCLUIDA" &&
       a.status !== "CANCELADA");
   const atrasadas = plano.iniciativas
@@ -170,7 +170,8 @@ export default async function PlanoDetalhePage({
                       }}
                     />
                     {ini.acoes.length === 0 && (
-                      <form
+                      <FormConfirmar
+                        mensagem={`Excluir a iniciativa "${ini.titulo}"?`}
                         action={async () => {
                           "use server";
                           await excluirIniciativa(ini.id);
@@ -182,7 +183,7 @@ export default async function PlanoDetalhePage({
                         >
                           Excluir
                         </button>
-                      </form>
+                      </FormConfirmar>
                     )}
                   </>
                 )}
@@ -274,7 +275,8 @@ export default async function PlanoDetalhePage({
                                   progresso: a.progresso,
                                 }}
                               />
-                              <form
+                              <FormConfirmar
+                                mensagem={`Excluir a ação "${a.titulo}"?`}
                                 action={async () => {
                                   "use server";
                                   await excluirAcaoPlano(a.id);
@@ -286,7 +288,7 @@ export default async function PlanoDetalhePage({
                                 >
                                   excluir
                                 </button>
-                              </form>
+                              </FormConfirmar>
                             </div>
                           </td>
                         )}
@@ -313,7 +315,8 @@ export default async function PlanoDetalhePage({
       {editor &&
         (sessao.papel === "ADMIN" || sessao.papel === "CONTROLADORIA") && (
           <div className="mt-6 border-t border-slate-200 pt-4">
-            <form
+            <FormConfirmar
+              mensagem="Excluir o plano INTEIRO? Todas as iniciativas e ações deste plano serão apagadas de forma irreversível."
               action={async () => {
                 "use server";
                 await excluirPlano(plano.id);
@@ -325,7 +328,7 @@ export default async function PlanoDetalhePage({
               >
                 Excluir plano inteiro
               </button>
-            </form>
+            </FormConfirmar>
           </div>
         )}
     </div>

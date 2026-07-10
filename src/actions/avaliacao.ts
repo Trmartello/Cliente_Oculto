@@ -10,7 +10,8 @@ import type {
   QuestionarioConfig,
   RespostaInput,
 } from "@/domain/score/tipos";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { corteVencimentoUtc, prazoEmDias } from "@/lib/prazos";
 
 export interface RespostaRascunho {
   perguntaId: string;
@@ -320,12 +321,14 @@ export async function removerObservacao(
 
 /** Meta de score geral aplicável ao posto na data (posto > rede). */
 async function metaAplicavel(postoId: string): Promise<number | null> {
-  const agora = new Date();
+  // vigência é DATA pura (00:00Z): compara com o dia de hoje em Brasília —
+  // a meta vale até o FIM do último dia cadastrado, não até 21h da véspera
+  const corte = corteVencimentoUtc();
   const vigente: Prisma.MetaWhereInput = {
     blocoNome: null,
     AND: [
-      { OR: [{ vigenciaInicio: null }, { vigenciaInicio: { lte: agora } }] },
-      { OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: agora } }] },
+      { OR: [{ vigenciaInicio: null }, { vigenciaInicio: { lte: corte } }] },
+      { OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: corte } }] },
     ],
   };
   const metaPosto = await prisma.meta.findFirst({
@@ -569,7 +572,8 @@ export async function enviarAvaliacao(
             origem: nc.origem,
             descricao: nc.descricao,
             prioridade: nc.prioridade,
-            prazo: new Date(agora.getTime() + 15 * 24 * 60 * 60 * 1000),
+            // data pura, 15 dias à frente (vence ao fim do dia em Brasília)
+            prazo: prazoEmDias(15),
           },
         });
       }
@@ -642,6 +646,32 @@ export async function enviarAvaliacao(
     const reprovadas = resultado.porPergunta.filter(
       (p) => p.pontua && p.reprovada,
     );
+
+    // Reenvio: iniciativa gerada por ESTA visita cujo item foi APROVADO na
+    // revisão — e que o gestor ainda não desdobrou em ações — sai do plano
+    // (a inconsistência não se confirmou). Com ações, permanece para
+    // decisão humana.
+    const reprovadasIds = new Set(reprovadas.map((p) => p.perguntaId));
+    const candidatas = await prisma.iniciativaPlano.findMany({
+      where: {
+        visitaId: visita.id,
+        status: "ABERTA",
+        perguntaId: { not: null },
+        acoes: { none: {} },
+      },
+      select: { id: true, perguntaId: true },
+    });
+    const orfas = candidatas
+      .filter((i) => i.perguntaId && !reprovadasIds.has(i.perguntaId))
+      .map((i) => i.id);
+    if (orfas.length > 0) {
+      // re-checa as condições no próprio delete: se o gestor desdobrou uma
+      // ação (ou mudou o status) entre a leitura e a exclusão, preserva
+      await prisma.iniciativaPlano.deleteMany({
+        where: { id: { in: orfas }, status: "ABERTA", acoes: { none: {} } },
+      });
+    }
+
     if (reprovadas.length > 0) {
       const posto = await prisma.posto.findUniqueOrThrow({
         where: { id: visita.postoId },
@@ -668,22 +698,37 @@ export async function enviarAvaliacao(
         const blocoNome = nomeBlocoPorId.get(blocoId);
         if (!blocoNome) continue;
 
-        // plano canônico do posto+etapa (o mais antigo; get-or-create)
+        // plano canônico do posto+etapa — o unique(postoId, blocoNome)
+        // garante um só mesmo com envios simultâneos de visitas diferentes
+        // (na corrida, o perdedor do create recarrega o vencedor)
         let plano = await prisma.planoAcao.findFirst({
           where: { postoId: visita.postoId, blocoNome },
-          orderBy: { criadoEm: "asc" },
         });
         if (!plano) {
-          plano = await prisma.planoAcao.create({
-            data: {
-              postoId: visita.postoId,
-              blocoNome,
-              problema: `${blocoNome} — ${posto.nome}`,
-              descricao:
-                "Plano gerado automaticamente a partir das inconsistências apontadas nas avaliações desta etapa.",
-            },
-          });
-        } else if (plano.status === "CONCLUIDO") {
+          try {
+            plano = await prisma.planoAcao.create({
+              data: {
+                postoId: visita.postoId,
+                blocoNome,
+                problema: `${blocoNome} — ${posto.nome}`,
+                descricao:
+                  "Plano gerado automaticamente a partir das inconsistências apontadas nas avaliações desta etapa.",
+              },
+            });
+          } catch (e) {
+            if (
+              e instanceof Prisma.PrismaClientKnownRequestError &&
+              e.code === "P2002"
+            ) {
+              plano = await prisma.planoAcao.findFirstOrThrow({
+                where: { postoId: visita.postoId, blocoNome },
+              });
+            } else {
+              throw e;
+            }
+          }
+        }
+        if (plano.status === "CONCLUIDO") {
           // problema voltou a aparecer: reabre o plano
           await prisma.planoAcao.update({
             where: { id: plano.id },
@@ -691,34 +736,41 @@ export async function enviarAvaliacao(
           });
         }
 
-        for (const item of itens) {
-          // inconsistência já em tratamento (iniciativa aberta) não duplica
-          const aberta = await prisma.iniciativaPlano.findFirst({
-            where: {
-              planoId: plano.id,
-              perguntaId: item.perguntaId,
-              status: { not: "CONCLUIDA" },
-            },
-          });
-          if (aberta) continue;
-          const ordem = await prisma.iniciativaPlano.count({
-            where: { planoId: plano.id },
-          });
-          await prisma.iniciativaPlano.create({
-            data: {
-              planoId: plano.id,
-              titulo: item.texto,
-              descricao:
-                `Inconsistência apontada na avaliação de ${dataStr}: ` +
-                `nota ${item.notaObtida ?? "—"}/${item.notaMaxima} ` +
-                `(criticidade ${item.criticidade}). ` +
-                "Desdobre as ações necessárias para tratar o problema.",
-              perguntaId: item.perguntaId,
-              visitaId: visita.id,
-              ordem,
-            },
-          });
-        }
+        // dedupe e ordem das iniciativas serializados por um lock na linha
+        // do plano — dois envios simultâneos não duplicam a mesma
+        // inconsistência nem colidem a ordem
+        const planoId = plano.id;
+        await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM PlanoAcao WHERE id = ${planoId} FOR UPDATE`;
+          for (const item of itens) {
+            // inconsistência já em tratamento (iniciativa aberta) não duplica
+            const aberta = await tx.iniciativaPlano.findFirst({
+              where: {
+                planoId,
+                perguntaId: item.perguntaId,
+                status: { not: "CONCLUIDA" },
+              },
+            });
+            if (aberta) continue;
+            const ordem = await tx.iniciativaPlano.count({
+              where: { planoId },
+            });
+            await tx.iniciativaPlano.create({
+              data: {
+                planoId,
+                titulo: item.texto,
+                descricao:
+                  `Inconsistência apontada na avaliação de ${dataStr}: ` +
+                  `nota ${item.notaObtida ?? "—"}/${item.notaMaxima} ` +
+                  `(criticidade ${item.criticidade}). ` +
+                  "Desdobre as ações necessárias para tratar o problema.",
+                perguntaId: item.perguntaId,
+                visitaId: visita.id,
+                ordem,
+              },
+            });
+          }
+        });
       }
     }
   } catch (e) {

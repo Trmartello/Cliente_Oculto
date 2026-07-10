@@ -1,6 +1,7 @@
 import { exigirPapel } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { excluirCiclo } from "@/actions/cadastros";
+import { FormConfirmar } from "@/components/confirmar";
 import { Card, PageHeader, Tabela, btnSecundario } from "@/components/ui";
 import { formatarData, formatarScore } from "@/lib/formato";
 import { CicloForm } from "./ciclo-form";
@@ -81,7 +82,8 @@ export default async function CiclosPage() {
                       }}
                     />
                     {c._count.visitas === 0 && (
-                      <form
+                      <FormConfirmar
+                        mensagem={`Excluir o ciclo "${c.nome}"?`}
                         action={async () => {
                           "use server";
                           await excluirCiclo(c.id);
@@ -93,7 +95,7 @@ export default async function CiclosPage() {
                         >
                           Excluir
                         </button>
-                      </form>
+                      </FormConfirmar>
                     )}
                   </div>
                 </td>

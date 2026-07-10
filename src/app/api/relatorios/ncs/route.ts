@@ -8,6 +8,7 @@ import {
   ROTULO_PRIORIDADE,
   ROTULO_STATUS_NC,
 } from "@/lib/formato";
+import { fimDoDiaBrasilia, inicioDoDiaBrasilia } from "@/lib/prazos";
 import type { Prisma } from "@prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -22,11 +23,12 @@ export async function GET(req: NextRequest) {
     ...(q.get("posto") ? { visita: { postoId: q.get("posto")! } } : {}),
     ...(q.get("inicio") || q.get("fim")
       ? {
+          // bordas do período em dias de Brasília (ver src/lib/prazos.ts)
           criadoEm: {
-            ...(q.get("inicio") ? { gte: new Date(q.get("inicio")!) } : {}),
-            ...(q.get("fim")
-              ? { lte: new Date(`${q.get("fim")}T23:59:59`) }
+            ...(q.get("inicio")
+              ? { gte: inicioDoDiaBrasilia(q.get("inicio")!) }
               : {}),
+            ...(q.get("fim") ? { lte: fimDoDiaBrasilia(q.get("fim")!) } : {}),
           },
         }
       : {}),

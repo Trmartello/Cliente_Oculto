@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { salvarUsuario, type ActionState } from "@/actions/cadastros";
 import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
@@ -26,26 +26,42 @@ export function UsuarioForm({
 }) {
   const router = useRouter();
   const [papel, setPapel] = useState(usuario?.papel ?? "CONSULTA");
+  const [aberto, setAberto] = useState(!!usuario);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     async (prev, fd) => {
       const r = await salvarUsuario(prev, fd);
-      if (r.ok) router.push("/cadastros/usuarios");
+      if (r.ok) {
+        setAberto(false);
+        router.push("/cadastros/usuarios");
+      }
       return r;
     },
     {},
   );
 
-  const [aberto, setAberto] = useState(!!usuario);
+  // ?editar=<id> na URL (re)abre o modal; fechar sem salvar LIMPA a URL —
+  // sem isso o botão fica preso em "Editando: X" e o link Editar da mesma
+  // linha para de responder
+  useEffect(() => {
+    if (usuario) {
+      setAberto(true);
+      setPapel(usuario.papel);
+    }
+  }, [usuario]);
+  function fechar() {
+    setAberto(false);
+    if (usuario) router.push("/cadastros/usuarios");
+  }
 
   return (
     <>
       <button type="button" onClick={() => setAberto(true)} className={btnSecundario}>
-        {usuario ? `Editando: ${usuario.nome}` : "+ Novo usuário"}
+        {usuario && aberto ? `Editando: ${usuario.nome}` : "+ Novo usuário"}
       </button>
       <Modal
         aberto={aberto}
         titulo={usuario ? `Editar usuário — ${usuario.nome}` : "Novo usuário"}
-        onFechar={() => setAberto(false)}
+        onFechar={fechar}
       >
         <form action={action} className="grid gap-4 sm:grid-cols-2">
           {usuario && <input type="hidden" name="id" value={usuario.id} />}

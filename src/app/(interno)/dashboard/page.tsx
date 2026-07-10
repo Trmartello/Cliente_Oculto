@@ -2,6 +2,7 @@ import { exigirSessao } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { escopoPosto } from "@/lib/rbac";
 import { carregarDashboard } from "@/lib/dashboard";
+import { fimDoDiaBrasilia, inicioDoDiaBrasilia } from "@/lib/prazos";
 import { faixaIgeo, rotuloFaixa } from "@/domain/score/igeo";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import {
@@ -69,8 +70,10 @@ export default async function DashboardPage({
 
   const dados = await carregarDashboard(sessao, {
     postoIds: postosSel.length ? postosSel : undefined,
-    inicio: inicio ? new Date(inicio) : undefined,
-    fim: fim ? new Date(`${fim}T23:59:59`) : undefined,
+    // bordas do período no fuso de Brasília — "Até 10/07" inclui o envio
+    // das 22h de 10/07, e "De 10/07" não puxa a noite da véspera
+    inicio: inicio ? inicioDoDiaBrasilia(inicio) : undefined,
+    fim: fim ? fimDoDiaBrasilia(fim) : undefined,
     blocosNomes: blocosSel.length ? blocosSel : undefined,
     meses: mesesSel.length ? mesesSel : undefined,
     ciclosIds: ciclosSel.length ? ciclosSel : undefined,

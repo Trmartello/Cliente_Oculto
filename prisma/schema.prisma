@@ -360,7 +360,9 @@ model PlanoAcao {
   posto       Posto             @relation(fields: [postoId], references: [id], onDelete: Cascade)
   iniciativas IniciativaPlano[]
 
-  @@index([postoId, blocoNome])
+  // plano CANÔNICO por posto+etapa: o unique garante o get-or-create sem
+  // duplicar sob concorrência (blocoNome NULL — planos avulsos — não colide)
+  @@unique([postoId, blocoNome])
 }
 
 model IniciativaPlano {

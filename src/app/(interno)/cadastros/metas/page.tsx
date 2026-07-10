@@ -1,6 +1,7 @@
 import { exigirPapel } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { excluirMeta } from "@/actions/cadastros";
+import { FormConfirmar } from "@/components/confirmar";
 import { PageHeader, Tabela, btnPerigo } from "@/components/ui";
 import { formatarData, formatarScore } from "@/lib/formato";
 import { MetaForm } from "./meta-form";
@@ -55,11 +56,14 @@ export default async function MetasPage() {
                 : "Sempre"}
             </td>
             <td className="px-4 py-3">
-              <form action={excluirMeta.bind(null, m.id)}>
+              <FormConfirmar
+                action={excluirMeta.bind(null, m.id)}
+                mensagem="Excluir esta meta? Avaliações futuras deixam de ser comparadas com ela."
+              >
                 <button type="submit" className={btnPerigo}>
                   Excluir
                 </button>
-              </form>
+              </FormConfirmar>
             </td>
           </tr>
         ))}

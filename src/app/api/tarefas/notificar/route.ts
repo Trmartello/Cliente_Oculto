@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { enviarEmail, rodapeEmail } from "@/lib/email";
 import { baseUrlPublica } from "@/lib/token-avaliacao";
+import { corteVencimentoUtc } from "@/lib/prazos";
 
 /**
  * Resumo diário de pendências vencidas — chamado por um cron externo
@@ -28,12 +29,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ erro: "Não autorizado" }, { status: 401 });
   }
 
-  const hoje = new Date();
+  // "vencido" = o dia do prazo terminou em Brasília — não cobra o
+  // responsável na manhã do próprio dia do prazo
+  const corte = corteVencimentoUtc();
   const [ncsVencidas, acoesVencidas, gestores] = await Promise.all([
     prisma.naoConformidade.findMany({
       where: {
         status: { in: ["ABERTA", "EM_ANDAMENTO"] },
-        prazo: { lt: hoje },
+        prazo: { lt: corte },
       },
       include: {
         visita: { include: { posto: { select: { nome: true } } } },
@@ -43,7 +46,7 @@ export async function GET(req: NextRequest) {
     prisma.acao.findMany({
       where: {
         status: { in: ["PENDENTE", "EM_ANDAMENTO"] },
-        prazo: { lt: hoje },
+        prazo: { lt: corte },
       },
       include: {
         naoConformidade: {

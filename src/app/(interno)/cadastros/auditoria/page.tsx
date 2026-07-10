@@ -1,6 +1,7 @@
 import { exigirPapel } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Badge, Card, PageHeader, Tabela } from "@/components/ui";
+import { Paginacao, paginaAtual } from "@/components/paginacao";
 import { formatarDataHora } from "@/lib/formato";
 
 export const metadata = { title: "Auditoria — Cliente Oculto" };
@@ -14,22 +15,32 @@ const ROTULO_ENTIDADE: Record<string, string> = {
   Pergunta: "Pergunta",
   Visita: "Visita",
   NaoConformidade: "Não Conformidade",
+  PlanoAcao: "Plano de Ação",
+  Ciclo: "Ciclo",
+  Avaliador: "Avaliador",
+  PesquisaNps: "Pesquisa NPS",
 };
+
+const POR_PAGINA = 100;
 
 export default async function AuditoriaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ entidade?: string }>;
+  searchParams: Promise<{ entidade?: string; pagina?: string }>;
 }) {
   await exigirPapel("ADMIN");
-  const { entidade } = await searchParams;
+  const { entidade, pagina: paginaBruta } = await searchParams;
+  const pagina = paginaAtual(paginaBruta);
+  const where = entidade ? { entidade } : {};
 
-  const [registros, entidades] = await Promise.all([
+  const [registros, total, entidades] = await Promise.all([
     prisma.auditoria.findMany({
-      where: entidade ? { entidade } : {},
+      where,
       orderBy: { criadoEm: "desc" },
-      take: 200,
+      skip: (pagina - 1) * POR_PAGINA,
+      take: POR_PAGINA,
     }),
+    prisma.auditoria.count({ where }),
     prisma.auditoria.groupBy({ by: ["entidade"], _count: { _all: true } }),
   ]);
 
@@ -37,7 +48,7 @@ export default async function AuditoriaPage({
     <div>
       <PageHeader
         titulo="Trilha de auditoria"
-        descricao="Quem alterou o quê e quando — últimos 200 registros"
+        descricao="Quem alterou o quê e quando"
       />
 
       <form className="mb-4 flex items-end gap-3" method="get">
@@ -91,6 +102,12 @@ export default async function AuditoriaPage({
           ))}
         </Tabela>
       )}
+      <Paginacao
+        total={total}
+        pagina={pagina}
+        porPagina={POR_PAGINA}
+        params={{ entidade }}
+      />
     </div>
   );
 }

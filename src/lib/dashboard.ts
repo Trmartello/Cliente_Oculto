@@ -1,7 +1,8 @@
 import "server-only";
 import { prisma } from "./prisma";
 import type { Sessao } from "./auth";
-import { escopoVisita, escopoNC } from "./rbac";
+import { escopoVisita } from "./rbac";
+import { corteVencimentoUtc } from "./prazos";
 import { round2 } from "@/domain/score/engine";
 import type { Prisma } from "@prisma/client";
 
@@ -138,7 +139,7 @@ export async function carregarDashboard(
     ? { pergunta: { bloco: { nome: { in: blocosNomes } } } }
     : {};
 
-  const agora = new Date();
+  const corteVigencia = corteVencimentoUtc();
   const [visitasTodas, ncsAbertas, criticidadeGroups, metaVigente] = await Promise.all([
     prisma.visita.findMany({
       where: wherePeriodo,
@@ -150,16 +151,10 @@ export async function carregarDashboard(
     }),
     prisma.naoConformidade.count({
       where: {
-        ...escopoNC(sessao),
         status: { in: ["ABERTA", "EM_ANDAMENTO"] },
-        ...(postoIds.length || ciclosIds.length
-          ? {
-              visita: {
-                ...(postoIds.length ? { postoId: { in: postoIds } } : {}),
-                ...(ciclosIds.length ? { cicloId: { in: ciclosIds } } : {}),
-              },
-            }
-          : {}),
+        // o card responde a TODOS os filtros do painel (posto, ciclo, mês,
+        // período, aba), como os demais — a visita da NC carrega o recorte
+        visita: whereVisitaCompleto,
         ...filtroBlocoPergunta,
       },
     }),
@@ -173,14 +168,16 @@ export async function carregarDashboard(
       },
       _count: { _all: true },
     }),
-    // meta geral da rede vigente (radar/benchmark usam como "aceitável")
+    // meta geral da rede vigente (radar/benchmark usam como "aceitável") —
+    // vigência é data pura: compara com o dia de hoje em Brasília para a
+    // meta valer até o fim do último dia cadastrado
     prisma.meta.findFirst({
       where: {
         blocoNome: null,
         postoId: null,
         AND: [
-          { OR: [{ vigenciaInicio: null }, { vigenciaInicio: { lte: agora } }] },
-          { OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: agora } }] },
+          { OR: [{ vigenciaInicio: null }, { vigenciaInicio: { lte: corteVigencia } }] },
+          { OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: corteVigencia } }] },
         ],
       },
       orderBy: { criadoEm: "desc" },

@@ -2,6 +2,7 @@ import { exigirPapel } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { baseUrlPublica } from "@/lib/token-avaliacao";
 import { alternarAtivoNps, gerarLinkNps } from "@/actions/nps";
+import { FormConfirmar } from "@/components/confirmar";
 import { Badge, Card, PageHeader, Tabela, btnSecundario } from "@/components/ui";
 import { formatarDataHora } from "@/lib/formato";
 import { CompartilharLink } from "../visitas/compartilhar-link";
@@ -150,7 +151,8 @@ export default async function NpsInternoPage() {
                       mensagem={`Avalie sua experiência no ${p.nome} — leva 30 segundos: ${base}/nps/${pesquisa.token}`}
                       variante="compacto"
                     />
-                    <form
+                    <FormConfirmar
+                      mensagem={`Desativar o link de NPS do ${p.nome}? Quem acessar (inclusive por QR já impresso) verá a pesquisa como encerrada.`}
                       action={async () => {
                         "use server";
                         await alternarAtivoNps(pesquisa.id);
@@ -162,7 +164,7 @@ export default async function NpsInternoPage() {
                       >
                         desativar
                       </button>
-                    </form>
+                    </FormConfirmar>
                   </span>
                 ) : (
                   <form

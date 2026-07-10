@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "./prisma";
+import { corteVencimentoUtc, prazoVencido } from "./prazos";
 import type { Sessao } from "./auth";
 import type { StatusAcaoPlano } from "@prisma/client";
 
@@ -14,14 +15,15 @@ import type { StatusAcaoPlano } from "@prisma/client";
  * das páginas de planos — o dado se corrige quando alguém lê.
  */
 export async function sincronizarAcoesAtrasadas(): Promise<void> {
-  const agora = new Date();
+  // prazo vence quando o dia termina em Brasília (ver src/lib/prazos.ts)
+  const corte = corteVencimentoUtc();
   // vencidas → ATRASADA (apenas o status AUTOMÁTICO; um "Em andamento"
   // escolhido pelo gestor nunca é sobrescrito — a data vencida já aparece
   // em vermelho na tabela)
   await prisma.acaoPlano.updateMany({
     where: {
       status: "NO_PRAZO",
-      dataLimite: { lt: agora },
+      dataLimite: { lt: corte },
     },
     data: { status: "ATRASADA" },
   });
@@ -29,7 +31,7 @@ export async function sincronizarAcoesAtrasadas(): Promise<void> {
   await prisma.acaoPlano.updateMany({
     where: {
       status: "ATRASADA",
-      OR: [{ dataLimite: { gte: agora } }, { dataLimite: null }],
+      OR: [{ dataLimite: { gte: corte } }, { dataLimite: null }],
     },
     data: { status: "NO_PRAZO" },
   });
@@ -43,7 +45,7 @@ export function resolverStatusAcao(
   status: StatusAcaoPlano,
   dataLimite: Date | null | undefined,
 ): StatusAcaoPlano {
-  const vencida = !!dataLimite && dataLimite < new Date();
+  const vencida = prazoVencido(dataLimite);
   // só o par automático transita sozinho; status manuais (EM_ANDAMENTO,
   // PAUSADA etc.) são respeitados mesmo com prazo vencido
   if (status === "NO_PRAZO" && vencida) return "ATRASADA";

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { exigirPapel, exigirSessao } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { podeGerirPlanoDoPosto, resolverStatusAcao } from "@/lib/planos";
+import { dataPrazo } from "@/lib/prazos";
 import type { ActionState } from "./cadastros";
 import type { Sessao } from "@/lib/auth";
 import type { StatusAcaoPlano } from "@prisma/client";
@@ -229,9 +230,8 @@ const acaoSchema = z.object({
 });
 
 function montarDadosAcao(dados: z.infer<typeof acaoSchema>) {
-  const dataLimite = dados.dataLimite
-    ? new Date(`${dados.dataLimite}T23:59:59`)
-    : null;
+  // prazo é data pura (00:00Z) e só vence quando o dia termina em Brasília
+  const dataLimite = dados.dataLimite ? dataPrazo(dados.dataLimite) : null;
   // AUTO → parte de NO_PRAZO e o resolvedor decide (vira ATRASADA se venceu)
   const statusPedido: StatusAcaoPlano =
     dados.status === "AUTO" ? "NO_PRAZO" : dados.status;

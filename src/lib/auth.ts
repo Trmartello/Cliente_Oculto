@@ -2,6 +2,7 @@ import "server-only";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { prisma } from "./prisma";
 import type { Papel } from "@prisma/client";
 
 const COOKIE_SESSAO = "sessao";
@@ -47,6 +48,13 @@ export async function obterSessao(): Promise<Sessao | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, segredo());
+    // o JWT vale por 12h, mas usuário DESATIVADO cai na hora: toda leitura
+    // de sessão revalida `ativo` no banco (desativar derruba a sessão)
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: payload.sub as string },
+      select: { ativo: true },
+    });
+    if (!usuario?.ativo) return null;
     return {
       usuarioId: payload.sub as string,
       nome: payload.nome as string,
