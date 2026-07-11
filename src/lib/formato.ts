@@ -105,6 +105,7 @@ export const COR_PRIORIDADE: Record<string, string> = {
 export const ROTULO_ORIGEM_NC: Record<string, string> = {
   FALHA_CRITICA: "Falha crítica",
   SCORE_ABAIXO_META: "Score abaixo da meta",
+  SCORE_BLOCO_ABAIXO_META: "Etapa abaixo da meta",
   MANUAL: "Manual",
 };
 
@@ -173,3 +174,11 @@ export function respostaExibida<
   }
   return { valor: r.valor, naoSeAplica: r.naoSeAplica, comentario: r.comentario };
 }
+
+export const ROTULO_PAPEL: Record<string, string> = {
+  ADMIN: "Administrador",
+  CONTROLADORIA: "Controladoria",
+  GESTOR_REGIONAL: "Gestor Regional",
+  GERENTE: "Gerente",
+  CONSULTA: "Consulta",
+};

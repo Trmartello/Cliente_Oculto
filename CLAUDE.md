@@ -82,11 +82,22 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
 - **Motor de score** (`src/domain/score/engine.ts`, testado): nota ponderada por
   pergunta dentro do bloco, blocos ponderados entre si; **falha crítica** quando
   razão da nota ≤ 0,4 numa pergunta CRITICA → penalidade `TETO`/`PERCENTUAL` e NC
-  automática. Faixas IGEO por limites numéricos em `igeo.ts`. Não altere sem
-  rodar `npm test`.
+  automática. Score final abaixo da meta geral gera NC `SCORE_ABAIXO_META`; e
+  **meta por ETAPA** (`config.metasPorBloco`, vinda de `Meta.blocoNome` em
+  `metasPorBlocoAplicaveis`) gera NC `SCORE_BLOCO_ABAIXO_META` por bloco abaixo
+  da sua meta (a chave de reconciliação/reincidência inclui `blocoNome`). Faixas
+  IGEO por limites numéricos em `igeo.ts`. Não altere sem rodar `npm test`.
 - **RBAC**: `escopoVisita/escopoNC/escopoPosto(sessao)` entram **na frente de toda
   query** de dados. ADMIN/CONTROLADORIA veem tudo; GESTOR_REGIONAL só a região;
   GERENTE só o posto; CONSULTA só leitura. Nunca remova o escopo de uma query.
+- **Senha**: mínimo 6 chars na criação E na edição. `login` tem rate limit
+  (5 falhas/15min por e-mail, memória do processo) + hash de sacrifício contra
+  enumeração; `obterSessao` revalida `usuario.ativo` no banco (desativar
+  derruba a sessão). Trocar a própria senha em `/conta`
+  (`trocarMinhaSenha`, confere a atual). "Esqueci a senha":
+  `solicitarResetSenha` (resposta genérica, sem enumeração) → e-mail com
+  `/redefinir-senha/[token]` → `redefinirSenhaComToken` (modelo `ResetSenha`,
+  hash sha256, uso único, validade 1h).
 - **Token do avaliador**: guardado como **hash sha256**. `validarToken` decide na
   ordem USADO (legado) → REVOGADO → EXPIRADO; expiração é **lazy** (persistida só
   no acesso, sem cron — é por design). **Janela de revisão**: o envio NÃO marca o

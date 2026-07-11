@@ -1,10 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { criarSessao, encerrarSessao } from "@/lib/auth";
+import { criarSessao, encerrarSessao, exigirSessao } from "@/lib/auth";
+import { enviarEmail, rodapeEmail } from "@/lib/email";
+import { baseUrlPublica } from "@/lib/token-avaliacao";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email("E-mail inválido"),
@@ -95,4 +99,130 @@ export async function login(
 export async function logout(): Promise<void> {
   await encerrarSessao();
   redirect("/login");
+}
+
+// ============ CICLO DE VIDA DE SENHA ============
+
+export interface SenhaState {
+  erro?: string;
+  ok?: boolean;
+}
+
+const hashReset = (token: string) =>
+  createHash("sha256").update(token).digest("hex");
+
+/** Troca a própria senha (usuário logado), conferindo a senha atual. */
+export async function trocarMinhaSenha(
+  _prev: SenhaState,
+  formData: FormData,
+): Promise<SenhaState> {
+  const sessao = await exigirSessao();
+  const atual = (formData.get("atual") as string) ?? "";
+  const nova = (formData.get("nova") as string) ?? "";
+  const confirma = (formData.get("confirma") as string) ?? "";
+  if (nova.length < 6) {
+    return { erro: "A nova senha deve ter pelo menos 6 caracteres" };
+  }
+  if (nova !== confirma) {
+    return { erro: "A confirmação não corresponde à nova senha" };
+  }
+  const usuario = await prisma.usuario.findUnique({
+    where: { id: sessao.usuarioId },
+  });
+  if (!usuario || !(await bcrypt.compare(atual, usuario.senhaHash))) {
+    return { erro: "Senha atual incorreta" };
+  }
+  await prisma.usuario.update({
+    where: { id: usuario.id },
+    data: { senhaHash: await bcrypt.hash(nova, 10) },
+  });
+  await registrarAuditoria(
+    sessao,
+    "usuario.trocar_senha",
+    "Usuario",
+    usuario.id,
+    "Alterou a própria senha",
+  );
+  return { ok: true };
+}
+
+/**
+ * "Esqueci minha senha": gera token de reset e envia por e-mail. SEMPRE
+ * retorna sucesso genérico (não revela se o e-mail existe) — sem enumeração.
+ */
+export async function solicitarResetSenha(
+  _prev: SenhaState,
+  formData: FormData,
+): Promise<SenhaState> {
+  const email = ((formData.get("email") as string) ?? "").trim().toLowerCase();
+  const usuario = email
+    ? await prisma.usuario.findUnique({ where: { email } })
+    : null;
+
+  if (usuario && usuario.ativo) {
+    const token = randomBytes(32).toString("hex");
+    await prisma.resetSenha.create({
+      data: {
+        usuarioId: usuario.id,
+        tokenHash: hashReset(token),
+        expiraEm: new Date(Date.now() + 60 * 60 * 1000), // 1h
+      },
+    });
+    const base = await baseUrlPublica();
+    const link = `${base}/redefinir-senha/${token}`;
+    await enviarEmail(
+      [usuario.email],
+      "Redefinição de senha — Cliente Oculto",
+      `<p>Recebemos um pedido para redefinir sua senha.</p>
+       <p><a href="${link}" style="color:#2563eb">Clique aqui para criar uma nova senha</a> (o link vale por 1 hora).</p>
+       <p>Se não foi você, ignore este e-mail.</p>
+       ${rodapeEmail(base)}`,
+    );
+  }
+  // resposta idêntica exista ou não o e-mail
+  return { ok: true };
+}
+
+/** Redefine a senha a partir do token do e-mail (uso único, com validade). */
+export async function redefinirSenhaComToken(
+  _prev: SenhaState,
+  formData: FormData,
+): Promise<SenhaState> {
+  const token = (formData.get("token") as string) ?? "";
+  const nova = (formData.get("nova") as string) ?? "";
+  const confirma = (formData.get("confirma") as string) ?? "";
+  if (nova.length < 6) {
+    return { erro: "A nova senha deve ter pelo menos 6 caracteres" };
+  }
+  if (nova !== confirma) {
+    return { erro: "A confirmação não corresponde à nova senha" };
+  }
+  const reset = await prisma.resetSenha.findUnique({
+    where: { tokenHash: hashReset(token) },
+    include: { usuario: { select: { id: true, ativo: true } } },
+  });
+  if (
+    !reset ||
+    reset.usadoEm ||
+    reset.expiraEm < new Date() ||
+    !reset.usuario.ativo
+  ) {
+    return { erro: "Link inválido ou expirado. Solicite um novo." };
+  }
+  await prisma.$transaction([
+    prisma.usuario.update({
+      where: { id: reset.usuarioId },
+      data: { senhaHash: await bcrypt.hash(nova, 10) },
+    }),
+    prisma.resetSenha.update({
+      where: { id: reset.id },
+      data: { usadoEm: new Date() },
+    }),
+    // invalida outros tokens pendentes do mesmo usuário
+    prisma.resetSenha.updateMany({
+      where: { usuarioId: reset.usuarioId, usadoEm: null },
+      data: { usadoEm: new Date() },
+    }),
+  ]);
+  return { ok: true };
 }

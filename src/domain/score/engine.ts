@@ -237,6 +237,22 @@ export function calcularScore(
     });
   }
 
+  // Metas por ETAPA: cada bloco que pontua e fica abaixo da sua meta gera
+  // uma NC específica da etapa (o campo Meta.blocoNome deixa de ser inerte).
+  const metasBloco = config.metasPorBloco ?? {};
+  for (const b of porBloco) {
+    const metaB = metasBloco[b.nome];
+    if (metaB != null && b.pontua && b.score !== null && b.score < metaB) {
+      ncsACriar.push({
+        origem: "SCORE_BLOCO_ABAIXO_META",
+        perguntaId: null,
+        blocoNome: b.nome,
+        descricao: `Etapa "${b.nome}" com score ${b.score.toFixed(2)} abaixo da meta de ${metaB.toFixed(2)}.`,
+        prioridade: "ALTA",
+      });
+    }
+  }
+
   return {
     porPergunta,
     porBloco,

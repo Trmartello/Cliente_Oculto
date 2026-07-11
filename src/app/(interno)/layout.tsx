@@ -60,9 +60,12 @@ export default async function InternoLayout({
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
-            <span className="hidden text-slate-500 sm:inline">
+            <Link
+              href="/conta"
+              className="hidden text-slate-500 hover:text-slate-900 hover:underline sm:inline"
+            >
               {sessao.nome} · {ROTULO_PAPEL[sessao.papel]}
-            </span>
+            </Link>
             <form action={logout}>
               <button
                 type="submit"

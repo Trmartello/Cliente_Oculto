@@ -2,45 +2,64 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { login, type LoginState } from "@/actions/auth";
+import { redefinirSenhaComToken, type SenhaState } from "@/actions/auth";
 
-export function LoginForm() {
-  const [state, action, pending] = useActionState<LoginState, FormData>(
-    login,
+export function RedefinirForm({ token }: { token: string }) {
+  const [state, action, pending] = useActionState<SenhaState, FormData>(
+    redefinirSenhaComToken,
     {},
   );
 
+  if (state.ok) {
+    return (
+      <div className="mt-6 space-y-4">
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Senha redefinida com sucesso. Você já pode entrar com a nova senha.
+        </p>
+        <Link
+          href="/login"
+          className="inline-block rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Ir para o login
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <form action={action} className="mt-6 space-y-4">
+      <input type="hidden" name="token" value={token} />
       <div>
         <label
-          htmlFor="email"
+          htmlFor="nova"
           className="block text-sm font-medium text-slate-700"
         >
-          E-mail
+          Nova senha
         </label>
         <input
-          id="email"
-          name="email"
-          type="email"
+          id="nova"
+          name="nova"
+          type="password"
           required
-          autoComplete="email"
+          minLength={6}
+          autoComplete="new-password"
           className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
         />
       </div>
       <div>
         <label
-          htmlFor="senha"
+          htmlFor="confirma"
           className="block text-sm font-medium text-slate-700"
         >
-          Senha
+          Confirmar nova senha
         </label>
         <input
-          id="senha"
-          name="senha"
+          id="confirma"
+          name="confirma"
           type="password"
           required
-          autoComplete="current-password"
+          minLength={6}
+          autoComplete="new-password"
           className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
         />
       </div>
@@ -54,16 +73,8 @@ export function LoginForm() {
         disabled={pending}
         className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
       >
-        {pending ? "Entrando…" : "Entrar"}
+        {pending ? "Salvando…" : "Redefinir senha"}
       </button>
-      <p className="text-center text-sm">
-        <Link
-          href="/esqueci-senha"
-          className="text-blue-700 hover:underline"
-        >
-          Esqueci minha senha
-        </Link>
-      </p>
     </form>
   );
 }

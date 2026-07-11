@@ -89,6 +89,48 @@ export default async function RelatoriosPage() {
             postos={postos}
           />
         </Card>
+
+        <Card>
+          <h2 className="mb-1 font-semibold text-slate-900">
+            Respostas item a item
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Uma linha por pergunta respondida: bloco, criticidade, nota,
+            reprovação e comentário — a base para a análise fina.
+          </p>
+          <FiltrosRelatorio
+            action="/api/relatorios/respostas"
+            rotulo="Baixar CSV de respostas"
+            postos={postos}
+          />
+        </Card>
+
+        <Card>
+          <h2 className="mb-1 font-semibold text-slate-900">Planos de ação</h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Uma linha por ação: posto, etapa, problema, iniciativa,
+            responsável, prazo, status e progresso. (O filtro de data não se
+            aplica a este relatório.)
+          </p>
+          <FiltrosRelatorio
+            action="/api/relatorios/planos"
+            rotulo="Baixar CSV de planos"
+            postos={postos}
+          />
+        </Card>
+
+        <Card>
+          <h2 className="mb-1 font-semibold text-slate-900">Pesquisa NPS</h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Uma linha por resposta de NPS: posto, nota, categoria
+            (promotor/neutro/detrator) e comentário.
+          </p>
+          <FiltrosRelatorio
+            action="/api/relatorios/nps"
+            rotulo="Baixar CSV de NPS"
+            postos={postos}
+          />
+        </Card>
       </div>
     </div>
   );

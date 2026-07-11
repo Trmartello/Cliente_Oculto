@@ -6,6 +6,7 @@ import { FormConfirmar } from "@/components/confirmar";
 import { Badge, Card, PageHeader, Tabela, btnSecundario } from "@/components/ui";
 import { formatarDataHora } from "@/lib/formato";
 import { CompartilharLink } from "../visitas/compartilhar-link";
+import { QrLink } from "@/components/qr-code";
 
 export const metadata = { title: "NPS — Cliente Oculto" };
 
@@ -150,6 +151,11 @@ export default async function NpsInternoPage() {
                       link={`${base}/nps/${pesquisa.token}`}
                       mensagem={`Avalie sua experiência no ${p.nome} — leva 30 segundos: ${base}/nps/${pesquisa.token}`}
                       variante="compacto"
+                    />
+                    <QrLink
+                      link={`${base}/nps/${pesquisa.token}`}
+                      titulo={`Pesquisa NPS — ${p.nome}`}
+                      legenda="Aponte a câmera do celular e avalie sua experiência."
                     />
                     <FormConfirmar
                       mensagem={`Desativar o link de NPS do ${p.nome}? Quem acessar (inclusive por QR já impresso) verá a pesquisa como encerrada.`}

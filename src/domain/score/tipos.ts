@@ -22,7 +22,10 @@ export type FaixaIgeo =
 
 export type Prioridade = "BAIXA" | "MEDIA" | "ALTA" | "URGENTE";
 
-export type OrigemNC = "FALHA_CRITICA" | "SCORE_ABAIXO_META";
+export type OrigemNC =
+  | "FALHA_CRITICA"
+  | "SCORE_ABAIXO_META"
+  | "SCORE_BLOCO_ABAIXO_META";
 
 export interface PerguntaConfig {
   id: string;
@@ -58,6 +61,11 @@ export interface QuestionarioConfig {
   limiarPrioridadeEstrategica?: number;
   /** Score mínimo aplicável (meta). Se o final ficar abaixo, gera NC. */
   metaScoreMinimo?: number | null;
+  /**
+   * Metas por ETAPA (bloco), por NOME do bloco. Quando o score de um bloco
+   * que pontua fica abaixo da sua meta, gera uma NC específica da etapa.
+   */
+  metasPorBloco?: Record<string, number>;
 }
 
 export interface RespostaInput {
@@ -115,6 +123,8 @@ export interface FalhaCritica {
 export interface NcACriar {
   origem: OrigemNC;
   perguntaId: string | null;
+  /** Nome do bloco, quando a NC é de uma etapa (SCORE_BLOCO_ABAIXO_META). */
+  blocoNome?: string | null;
   descricao: string;
   prioridade: Prioridade;
 }

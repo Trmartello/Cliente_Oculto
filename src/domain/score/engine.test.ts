@@ -318,6 +318,42 @@ describe("calcularScore — meta", () => {
     const r = calcularScore(cfg, [{ perguntaId: p1.id, valor: "8" }]);
     expect(r.ncsACriar).toHaveLength(0);
   });
+
+  it("bloco abaixo da meta da etapa gera NC SCORE_BLOCO_ABAIXO_META (só o bloco abaixo)", () => {
+    const pa = pergunta({ id: "pa", tipo: "NOTA_1_10", notaMaxima: 10 });
+    const pb = pergunta({ id: "pb", tipo: "NOTA_1_10", notaMaxima: 10 });
+    const cfg = config(
+      [bloco("Limpeza", 50, [pa]), bloco("Atendimento", 50, [pb])],
+      { metasPorBloco: { Limpeza: 90, Atendimento: 90 } },
+    );
+    // Limpeza 40 (abaixo), Atendimento 100 (ok)
+    const r = calcularScore(cfg, [
+      { perguntaId: "pa", valor: "4" },
+      { perguntaId: "pb", valor: "10" },
+    ]);
+    const blocoNcs = r.ncsACriar.filter(
+      (n) => n.origem === "SCORE_BLOCO_ABAIXO_META",
+    );
+    expect(blocoNcs).toHaveLength(1);
+    expect(blocoNcs[0].blocoNome).toBe("Limpeza");
+  });
+
+  it("bloco marcado como não se aplica não gera NC de meta de etapa", () => {
+    const pa = pergunta({ id: "pa", tipo: "NOTA_1_10", notaMaxima: 10 });
+    const pb = pergunta({ id: "pb", tipo: "NOTA_1_10", notaMaxima: 10 });
+    const cfg = config(
+      [bloco("Troca de óleo", 50, [pa]), bloco("Atendimento", 50, [pb])],
+      { metasPorBloco: { "Troca de óleo": 90 } },
+    );
+    const r = calcularScore(
+      cfg,
+      [{ perguntaId: "pb", valor: "10" }],
+      { blocosNaoSeAplica: ["b-Troca de óleo"] },
+    );
+    expect(
+      r.ncsACriar.filter((n) => n.origem === "SCORE_BLOCO_ABAIXO_META"),
+    ).toHaveLength(0);
+  });
 });
 
 describe("faixaIgeo — fronteiras", () => {

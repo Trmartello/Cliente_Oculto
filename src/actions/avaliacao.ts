@@ -344,6 +344,39 @@ async function metaAplicavel(postoId: string): Promise<number | null> {
 }
 
 /**
+ * Metas por ETAPA aplicáveis ao posto (posto > rede), por nome de bloco.
+ * A do posto tem prioridade sobre a da rede para o mesmo bloco.
+ */
+async function metasPorBlocoAplicaveis(
+  postoId: string,
+): Promise<Record<string, number>> {
+  const corte = corteVencimentoUtc();
+  const vigente: Prisma.MetaWhereInput = {
+    blocoNome: { not: null },
+    AND: [
+      { OR: [{ vigenciaInicio: null }, { vigenciaInicio: { lte: corte } }] },
+      { OR: [{ vigenciaFim: null }, { vigenciaFim: { gte: corte } }] },
+    ],
+  };
+  const metas = await prisma.meta.findMany({
+    where: { ...vigente, OR: [{ postoId }, { postoId: null }] },
+    orderBy: { criadoEm: "desc" },
+  });
+  const porBloco: Record<string, number> = {};
+  // o posto vence a rede: aplica primeiro as do posto, depois só preenche
+  // com as da rede os blocos ainda sem meta específica
+  for (const escopo of [postoId, null]) {
+    for (const m of metas) {
+      if (m.postoId !== escopo || !m.blocoNome) continue;
+      if (porBloco[m.blocoNome] === undefined) {
+        porBloco[m.blocoNome] = Number(m.scoreMinimo);
+      }
+    }
+  }
+  return porBloco;
+}
+
+/**
  * Envio definitivo: valida obrigatórias, roda o motor de score e persiste
  * tudo em transação — snapshots por resposta e na visita, NCs automáticas
  * e token marcado como usado. O histórico fica imutável.
@@ -438,6 +471,7 @@ export async function enviarAvaliacao(
     penalidadeCriticaTipo: visita.questionario.penalidadeCriticaTipo,
     penalidadeCriticaValor: Number(visita.questionario.penalidadeCriticaValor),
     metaScoreMinimo: await metaAplicavel(visita.postoId),
+    metasPorBloco: await metasPorBlocoAplicaveis(visita.postoId),
   };
 
   const entradas: RespostaInput[] = respostas.map((r) => ({
@@ -544,19 +578,34 @@ export async function enviarAvaliacao(
     const ncsExistentes = await tx.naoConformidade.findMany({
       where: {
         visitaId: visita.id,
-        origem: { in: ["FALHA_CRITICA", "SCORE_ABAIXO_META"] },
+        origem: {
+          in: [
+            "FALHA_CRITICA",
+            "SCORE_ABAIXO_META",
+            "SCORE_BLOCO_ABAIXO_META",
+          ],
+        },
       },
       include: { _count: { select: { acoes: true } } },
     });
-    const chaveNC = (origem: string, perguntaId?: string | null) =>
-      `${origem}:${perguntaId ?? ""}`;
+    // a chave inclui blocoNome para não colidir NCs de etapas diferentes
+    // (todas com perguntaId null)
+    const chaveNC = (
+      origem: string,
+      perguntaId?: string | null,
+      blocoNome?: string | null,
+    ) => `${origem}:${perguntaId ?? ""}:${blocoNome ?? ""}`;
     const semCorrespondencia = new Map(
-      ncsExistentes.map((nc) => [chaveNC(nc.origem, nc.perguntaId), nc]),
+      ncsExistentes.map((nc) => [
+        chaveNC(nc.origem, nc.perguntaId, nc.blocoNome),
+        nc,
+      ]),
     );
     for (const nc of resultado.ncsACriar) {
-      const existente = semCorrespondencia.get(chaveNC(nc.origem, nc.perguntaId));
+      const chave = chaveNC(nc.origem, nc.perguntaId, nc.blocoNome);
+      const existente = semCorrespondencia.get(chave);
       if (existente) {
-        semCorrespondencia.delete(chaveNC(nc.origem, nc.perguntaId));
+        semCorrespondencia.delete(chave);
         // atualiza o conteúdo (nota/descrição podem ter mudado no reenvio)
         // preservando status, responsável, prazo e ações
         await tx.naoConformidade.update({
@@ -566,13 +615,14 @@ export async function enviarAvaliacao(
       } else {
         ncsNovas.push(nc);
         // REINCIDÊNCIA: quantas vezes a MESMA falha (posto + origem +
-        // pergunta) já ocorreu em visitas enviadas ANTES desta. Snapshot no
-        // envio — vira selo "Reincidente Nx" e alimenta o painel de
-        // recorrência.
+        // pergunta + etapa) já ocorreu em visitas enviadas ANTES desta.
+        // Snapshot no envio — vira selo "Reincidente Nx" e alimenta o painel
+        // de recorrência.
         const reincidencia = await tx.naoConformidade.count({
           where: {
             origem: nc.origem,
             perguntaId: nc.perguntaId ?? null,
+            blocoNome: nc.blocoNome ?? null,
             visitaId: { not: visita.id },
             visita: {
               postoId: visita.postoId,
@@ -584,6 +634,7 @@ export async function enviarAvaliacao(
           data: {
             visitaId: visita.id,
             perguntaId: nc.perguntaId,
+            blocoNome: nc.blocoNome ?? null,
             origem: nc.origem,
             descricao: nc.descricao,
             prioridade: nc.prioridade,

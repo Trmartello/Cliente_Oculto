@@ -65,6 +65,7 @@ enum FaixaIgeo {
 enum OrigemNC {
   FALHA_CRITICA
   SCORE_ABAIXO_META
+  SCORE_BLOCO_ABAIXO_META
   MANUAL
 }
 
@@ -153,6 +154,24 @@ model Usuario {
   acoesResponsavel Acao[]            @relation("AcaoResponsavel")
   acoesPlano       AcaoPlano[]       @relation("AcaoPlanoResponsavel")
   auditorias       Auditoria[]
+  resetsSenha      ResetSenha[]
+}
+
+/**
+ * Token de redefinição de senha ("esqueci minha senha"). Guardado como hash
+ * sha256 (o token cru só viaja no link do e-mail). Uso único e com validade.
+ */
+model ResetSenha {
+  id        String    @id @default(cuid())
+  usuarioId String
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  criadoEm  DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 // ============ QUESTIONÁRIO (motor de regras parametrizável) ============
@@ -541,6 +560,7 @@ model NaoConformidade {
   id            String     @id @default(cuid())
   visitaId      String
   perguntaId    String? // origem FALHA_CRITICA
+  blocoNome     String? // origem SCORE_BLOCO_ABAIXO_META (etapa abaixo da meta)
   origem        OrigemNC
   descricao     String     @db.Text
   prioridade    Prioridade
