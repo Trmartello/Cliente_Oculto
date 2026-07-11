@@ -72,14 +72,18 @@ export const COR_STATUS_VISITA: Record<string, string> = {
 
 export const ROTULO_STATUS_NC: Record<string, string> = {
   ABERTA: "Aberta",
+  EM_CONTESTACAO: "Em contestação",
   EM_ANDAMENTO: "Em andamento",
+  AGUARDANDO_VALIDACAO: "Aguardando validação",
   RESOLVIDA: "Resolvida",
   CANCELADA: "Cancelada",
 };
 
 export const COR_STATUS_NC: Record<string, string> = {
   ABERTA: "bg-red-100 text-red-800",
+  EM_CONTESTACAO: "bg-orange-100 text-orange-800",
   EM_ANDAMENTO: "bg-amber-100 text-amber-800",
+  AGUARDANDO_VALIDACAO: "bg-purple-100 text-purple-800",
   RESOLVIDA: "bg-emerald-100 text-emerald-800",
   CANCELADA: "bg-slate-100 text-slate-600",
 };

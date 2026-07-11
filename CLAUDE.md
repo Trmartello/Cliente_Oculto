@@ -164,10 +164,27 @@ src/components/dashboard/charts.tsx  gráficos Recharts + cross-filter (client)
 - Gestão por escopo (`podeGerirPlanoDoPosto`): GERENTE só o próprio posto,
   GESTOR_REGIONAL a região; CONSULTA não edita; excluir plano é
   ADMIN/CONTROLADORIA. Tudo auditado.
-- **Kanban de NCs**: os cards acompanham a execução — todas as ações
-  finalizadas (≥1 concluída) movem a NC para RESOLVIDA automaticamente
-  (`reconciliarStatusNC`); reabrir ação devolve para EM_ANDAMENTO; botões
-  ◀/▶ no card fazem o movimento manual.
+- **Kanban de NCs + GATE de validação**: os cards acompanham a execução —
+  todas as ações finalizadas (≥1 concluída) levam a NC a
+  **AGUARDANDO_VALIDACAO** (não resolvem sozinhas); reabrir ação devolve para
+  EM_ANDAMENTO (`reconciliarStatusNC`). As raias agrupam status
+  (Abertas = ABERTA+EM_CONTESTACAO; Em andamento = EM_ANDAMENTO+AGUARDANDO_VALIDACAO;
+  Resolvidas), com o selo do status preciso no card. `CardAcoes` dá os botões
+  contextuais por status; `moverNC` exige `podeValidarCorrecao` para RESOLVER
+  a partir de AGUARDANDO_VALIDACAO.
+- **Governança da inconsistência** (fluxo humano em torno da NC,
+  `src/actions/ncs.ts`): (1) **contestação** — o avaliado
+  (`podeContestar`: GERENTE/GESTOR_REGIONAL) registra réplica → EM_CONTESTACAO
+  (paralisa a reconciliação automática); (2) **decisão** — Controladoria/Admin
+  (`podeDecidirContestacao`) acata (CANCELADA) ou rejeita (ABERTA); (3)
+  **validação** — superior (`podeValidarCorrecao`) aprova (RESOLVIDA, grava
+  `validadaPor`) ou devolve (EM_ANDAMENTO). Tudo auditado. UI no card
+  "Governança" do detalhe da NC.
+- **Reincidência**: no envio, cada NC nova recebe `reincidencia` = nº de
+  ocorrências anteriores da MESMA falha (posto + origem + pergunta) em visitas
+  enviadas antes desta (snapshot, `avaliacao.ts`). Vira selo "Reincidente Nª"
+  na NC/kanban e o painel "Falhas reincidentes em aberto" no dashboard
+  (`carregarDashboard`).
 - **`useFecharAoSalvar` depende da IDENTIDADE do estado** (objeto novo por
   submit), não do booleano `ok` — senão o modal não fecha na 2ª gravação da
   mesma instância. Não "simplifique" a dependência do efeito.

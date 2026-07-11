@@ -565,6 +565,21 @@ export async function enviarAvaliacao(
         });
       } else {
         ncsNovas.push(nc);
+        // REINCIDÊNCIA: quantas vezes a MESMA falha (posto + origem +
+        // pergunta) já ocorreu em visitas enviadas ANTES desta. Snapshot no
+        // envio — vira selo "Reincidente Nx" e alimenta o painel de
+        // recorrência.
+        const reincidencia = await tx.naoConformidade.count({
+          where: {
+            origem: nc.origem,
+            perguntaId: nc.perguntaId ?? null,
+            visitaId: { not: visita.id },
+            visita: {
+              postoId: visita.postoId,
+              dataEnvio: { lt: agora },
+            },
+          },
+        });
         await tx.naoConformidade.create({
           data: {
             visitaId: visita.id,
@@ -572,6 +587,7 @@ export async function enviarAvaliacao(
             origem: nc.origem,
             descricao: nc.descricao,
             prioridade: nc.prioridade,
+            reincidencia,
             // data pura, 15 dias à frente (vence ao fim do dia em Brasília)
             prazo: prazoEmDias(15),
           },

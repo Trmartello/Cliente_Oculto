@@ -73,6 +73,14 @@ export interface DadosDashboard {
   }[];
   /** Meta de score vigente da rede (score mínimo desejável), se cadastrada. */
   metaScore: number | null;
+  /** Falhas reincidentes em aberto (mesma inconsistência repetida no posto). */
+  reincidentes: {
+    id: string;
+    posto: string;
+    descricao: string;
+    ocorrencias: number;
+    status: string;
+  }[];
 }
 
 function media(valores: number[]): number | null {
@@ -140,7 +148,8 @@ export async function carregarDashboard(
     : {};
 
   const corteVigencia = corteVencimentoUtc();
-  const [visitasTodas, ncsAbertas, criticidadeGroups, metaVigente] = await Promise.all([
+  const [visitasTodas, ncsAbertas, criticidadeGroups, metaVigente, reincidentesRaw] =
+    await Promise.all([
     prisma.visita.findMany({
       where: wherePeriodo,
       include: {
@@ -182,7 +191,34 @@ export async function carregarDashboard(
       },
       orderBy: { criadoEm: "desc" },
     }),
+    // REINCIDÊNCIA: falhas que se repetem no posto e ainda estão em aberto —
+    // o que exige atenção da gestão (problema crônico, não pontual)
+    prisma.naoConformidade.findMany({
+      where: {
+        reincidencia: { gt: 0 },
+        status: { notIn: ["RESOLVIDA", "CANCELADA"] },
+        visita: whereVisitaCompleto,
+        ...filtroBlocoPergunta,
+      },
+      select: {
+        id: true,
+        descricao: true,
+        reincidencia: true,
+        status: true,
+        visita: { select: { posto: { select: { nome: true } } } },
+      },
+      orderBy: [{ reincidencia: "desc" }, { criadoEm: "desc" }],
+      take: 8,
+    }),
   ]);
+
+  const reincidentes = reincidentesRaw.map((nc) => ({
+    id: nc.id,
+    posto: nc.visita.posto.nome,
+    descricao: nc.descricao,
+    ocorrencias: nc.reincidencia + 1,
+    status: nc.status,
+  }));
 
   const noPosto = (v: (typeof visitasTodas)[number]) =>
     postoIds.length === 0 || postoIds.includes(v.posto.id);
@@ -388,5 +424,6 @@ export async function carregarDashboard(
     oportunidadesPorPosto,
     comparativoCiclos,
     metaScore: metaVigente ? Number(metaVigente.scoreMinimo) : null,
+    reincidentes,
   };
 }

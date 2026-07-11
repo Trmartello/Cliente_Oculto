@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { exigirSessao } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { escopoPosto } from "@/lib/rbac";
@@ -7,7 +8,9 @@ import { faixaIgeo, rotuloFaixa } from "@/domain/score/igeo";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import {
   COR_FAIXA,
+  COR_STATUS_NC,
   ROTULO_CRITICIDADE,
+  ROTULO_STATUS_NC,
   formatarScore,
 } from "@/lib/formato";
 import {
@@ -412,6 +415,42 @@ export default async function DashboardPage({
               ))}
             </div>
           </Card>
+
+          {dados.reincidentes.length > 0 && (
+            <Card className="border-l-4 border-l-rose-400">
+              <h2 className="mb-1 font-semibold text-slate-900">
+                Falhas reincidentes em aberto
+              </h2>
+              <p className="mb-3 text-sm text-slate-500">
+                Mesma inconsistência que voltou a aparecer no posto — problema
+                crônico, prioridade da gestão.
+              </p>
+              <ul className="divide-y divide-slate-100">
+                {dados.reincidentes.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                  >
+                    <Link
+                      href={`/nao-conformidades/${r.id}`}
+                      className="text-blue-700 hover:underline"
+                    >
+                      <span className="font-medium">{r.posto}</span> —{" "}
+                      {r.descricao}
+                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Badge cor="bg-rose-600 text-white">
+                        {r.ocorrencias}ª ocorrência
+                      </Badge>
+                      <Badge cor={COR_STATUS_NC[r.status]}>
+                        {ROTULO_STATUS_NC[r.status]}
+                      </Badge>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </>
       )}
     </div>

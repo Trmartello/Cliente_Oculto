@@ -2,7 +2,13 @@
 
 import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { atualizarNC, criarAcao } from "@/actions/ncs";
+import {
+  atualizarNC,
+  contestarNC,
+  criarAcao,
+  decidirContestacao,
+  validarCorrecao,
+} from "@/actions/ncs";
 import type { ActionState } from "@/actions/cadastros";
 import { btnPrimario, btnSecundario, inputCls } from "@/components/ui";
 import { Modal, useFecharAoSalvar } from "@/components/modal";
@@ -36,7 +42,9 @@ export function NcEditarForm({
           className={`mt-1 ${inputCls}`}
         >
           <option value="ABERTA">Aberta</option>
+          <option value="EM_CONTESTACAO">Em contestação</option>
           <option value="EM_ANDAMENTO">Em andamento</option>
+          <option value="AGUARDANDO_VALIDACAO">Aguardando validação</option>
           <option value="RESOLVIDA">Resolvida</option>
           <option value="CANCELADA">Cancelada</option>
         </select>
@@ -174,6 +182,198 @@ export function AcaoNovaForm({
           </button>
         </div>
       </form>
+      </Modal>
+    </>
+  );
+}
+
+// ============ GOVERNANÇA: contestação, decisão e validação ============
+
+/** Réplica do avaliado: contesta a NC com justificativa. */
+export function ContestarForm({ ncId }: { ncId: string }) {
+  const [aberto, setAberto] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    contestarNC,
+    {},
+  );
+  useFecharAoSalvar(state, () => setAberto(false));
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className={btnSecundario}
+      >
+        Contestar
+      </button>
+      <Modal
+        aberto={aberto}
+        titulo="Contestar não conformidade"
+        onFechar={() => setAberto(false)}
+      >
+        <form action={action} className="space-y-4">
+          <input type="hidden" name="id" value={ncId} />
+          <p className="text-sm text-slate-600">
+            Registre por que você discorda desta NC. A Controladoria vai
+            analisar e decidir; enquanto isso a NC fica “Em contestação”.
+          </p>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">
+              Motivo da contestação *
+            </span>
+            <textarea
+              name="justificativa"
+              required
+              rows={4}
+              placeholder="ex.: O item foi avaliado sem considerar que o serviço estava em manutenção programada no dia."
+              className={`mt-1 ${inputCls}`}
+            />
+          </label>
+          {state.erro && <p className="text-sm text-red-600">{state.erro}</p>}
+          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setAberto(false)}
+              className={btnSecundario}
+            >
+              Cancelar
+            </button>
+            <button type="submit" disabled={pending} className={btnPrimario}>
+              {pending ? "Enviando…" : "Enviar contestação"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+/** Controladoria decide a contestação: acata (cancela a NC) ou rejeita. */
+export function DecidirContestacaoForm({ ncId }: { ncId: string }) {
+  const [aberto, setAberto] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    decidirContestacao,
+    {},
+  );
+  useFecharAoSalvar(state, () => setAberto(false));
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className={btnPrimario}
+      >
+        Analisar contestação
+      </button>
+      <Modal
+        aberto={aberto}
+        titulo="Decidir contestação"
+        onFechar={() => setAberto(false)}
+      >
+        <form action={action} className="space-y-4">
+          <input type="hidden" name="id" value={ncId} />
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">
+              Parecer (opcional)
+            </span>
+            <textarea
+              name="nota"
+              rows={3}
+              placeholder="Justifique a decisão para o registro de auditoria."
+              className={`mt-1 ${inputCls}`}
+            />
+          </label>
+          {state.erro && <p className="text-sm text-red-600">{state.erro}</p>}
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+            <button
+              type="submit"
+              name="aceitar"
+              value="false"
+              disabled={pending}
+              className={btnSecundario}
+            >
+              Rejeitar (mantém a NC)
+            </button>
+            <button
+              type="submit"
+              name="aceitar"
+              value="true"
+              disabled={pending}
+              className={`${btnPrimario} !bg-emerald-600`}
+            >
+              Acatar (cancela a NC)
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+/** Superior valida a correção: aprova (Resolvida) ou devolve (refazer). */
+export function ValidarCorrecaoForm({ ncId }: { ncId: string }) {
+  const [aberto, setAberto] = useState(false);
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    validarCorrecao,
+    {},
+  );
+  useFecharAoSalvar(state, () => setAberto(false));
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className={btnPrimario}
+      >
+        Validar correção
+      </button>
+      <Modal
+        aberto={aberto}
+        titulo="Validar a correção"
+        onFechar={() => setAberto(false)}
+      >
+        <form action={action} className="space-y-4">
+          <input type="hidden" name="id" value={ncId} />
+          <p className="text-sm text-slate-600">
+            As ações foram concluídas. Confira se o problema foi realmente
+            resolvido: aprove para encerrar ou devolva explicando o que falta.
+          </p>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">
+              Observação (obrigatória ao devolver)
+            </span>
+            <textarea
+              name="nota"
+              rows={3}
+              placeholder="ex.: Falta anexar a foto da fachada corrigida."
+              className={`mt-1 ${inputCls}`}
+            />
+          </label>
+          {state.erro && <p className="text-sm text-red-600">{state.erro}</p>}
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+            <button
+              type="submit"
+              name="aprovar"
+              value="false"
+              disabled={pending}
+              className={btnSecundario}
+            >
+              Devolver para refazer
+            </button>
+            <button
+              type="submit"
+              name="aprovar"
+              value="true"
+              disabled={pending}
+              className={`${btnPrimario} !bg-emerald-600`}
+            >
+              Aprovar (Resolver)
+            </button>
+          </div>
+        </form>
       </Modal>
     </>
   );

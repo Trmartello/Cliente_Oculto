@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { exigirSessao } from "@/lib/auth";
-import { escopoNC, escopoPosto, podeEditar } from "@/lib/rbac";
+import {
+  escopoNC,
+  escopoPosto,
+  podeEditar,
+  podeValidarCorrecao,
+} from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { moverNC } from "@/actions/ncs";
 import { Badge, PageHeader } from "@/components/ui";
 import {
   COR_PRIORIDADE,
+  COR_STATUS_NC,
   ROTULO_ORIGEM_NC,
   ROTULO_PRIORIDADE,
   ROTULO_STATUS_NC,
@@ -15,15 +21,26 @@ import type { Prisma } from "@prisma/client";
 
 export const metadata = { title: "Não Conformidades — Cliente Oculto" };
 
+// Cada raia agrupa os status daquela fase do fluxo de governança:
+// "Abertas" reúne ABERTA + EM_CONTESTACAO; "Em andamento" reúne
+// EM_ANDAMENTO + AGUARDANDO_VALIDACAO; "Resolvidas" só RESOLVIDA. O card
+// mostra o status preciso no selo.
 const COLUNAS = [
-  { status: "ABERTA", cor: "border-red-300 bg-red-50", titulo: "Abertas" },
   {
-    status: "EM_ANDAMENTO",
+    key: "ABERTA",
+    status: ["ABERTA", "EM_CONTESTACAO"],
+    cor: "border-red-300 bg-red-50",
+    titulo: "Abertas",
+  },
+  {
+    key: "EM_ANDAMENTO",
+    status: ["EM_ANDAMENTO", "AGUARDANDO_VALIDACAO"],
     cor: "border-amber-300 bg-amber-50",
     titulo: "Em andamento",
   },
   {
-    status: "RESOLVIDA",
+    key: "RESOLVIDA",
+    status: ["RESOLVIDA"],
     cor: "border-emerald-300 bg-emerald-50",
     titulo: "Resolvidas",
   },
@@ -38,6 +55,7 @@ export default async function NcsPage({
 }) {
   const sessao = await exigirSessao();
   const editor = podeEditar(sessao);
+  const podeValidar = podeValidarCorrecao(sessao);
   const { posto, prioridade, limite: limiteBruto } = await searchParams;
   const limite =
     Number.isInteger(Number(limiteBruto)) && Number(limiteBruto) > 0
@@ -124,10 +142,12 @@ export default async function NcsPage({
 
       <div className="grid gap-4 lg:grid-cols-3">
         {COLUNAS.map((coluna) => {
-          const itens = ncs.filter((nc) => nc.status === coluna.status);
+          const itens = ncs.filter((nc) =>
+            (coluna.status as readonly string[]).includes(nc.status),
+          );
           return (
             <div
-              key={coluna.status}
+              key={coluna.key}
               className={`rounded-xl border ${coluna.cor} p-3`}
             >
               <h2 className="mb-3 flex items-center justify-between font-semibold text-slate-900">
@@ -150,6 +170,17 @@ export default async function NcsPage({
                         <Badge cor={COR_PRIORIDADE[nc.prioridade]}>
                           {ROTULO_PRIORIDADE[nc.prioridade]}
                         </Badge>
+                        {/* selo do status preciso quando não é o "padrão" da raia */}
+                        {nc.status !== coluna.key && (
+                          <Badge cor={COR_STATUS_NC[nc.status]}>
+                            {ROTULO_STATUS_NC[nc.status]}
+                          </Badge>
+                        )}
+                        {nc.reincidencia > 0 && (
+                          <Badge cor="bg-rose-600 text-white">
+                            Reincidente {nc.reincidencia + 1}ª
+                          </Badge>
+                        )}
                         <span className="text-xs text-slate-500">
                           {ROTULO_ORIGEM_NC[nc.origem]}
                         </span>
@@ -166,62 +197,19 @@ export default async function NcsPage({
                       </p>
                     </Link>
                     {editor && (
-                      <div className="flex items-center justify-between border-t border-slate-100 px-2 py-1.5">
-                        {coluna.status !== "ABERTA" ? (
-                          <form
-                            action={async () => {
-                              "use server";
-                              await moverNC(
-                                nc.id,
-                                coluna.status === "RESOLVIDA"
-                                  ? "EM_ANDAMENTO"
-                                  : "ABERTA",
-                              );
-                            }}
-                          >
-                            <button
-                              type="submit"
-                              className="rounded-md px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-100"
-                              title="Voltar uma etapa no fluxo"
-                            >
-                              ◀ Voltar
-                            </button>
-                          </form>
-                        ) : (
-                          <span />
-                        )}
-                        {coluna.status !== "RESOLVIDA" ? (
-                          <form
-                            action={async () => {
-                              "use server";
-                              await moverNC(
-                                nc.id,
-                                coluna.status === "ABERTA"
-                                  ? "EM_ANDAMENTO"
-                                  : "RESOLVIDA",
-                              );
-                            }}
-                          >
-                            <button
-                              type="submit"
-                              className="rounded-md px-2 py-0.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
-                              title="Avançar no fluxo"
-                            >
-                              {coluna.status === "ABERTA"
-                                ? "Iniciar ▶"
-                                : "Resolver ▶"}
-                            </button>
-                          </form>
-                        ) : (
-                          <span />
-                        )}
-                      </div>
+                      <CardAcoes
+                        nc={{
+                          id: nc.id,
+                          status: nc.status,
+                        }}
+                        podeValidar={podeValidar}
+                      />
                     )}
                   </div>
                 ))}
                 {itens.length === 0 && (
                   <p className="px-1 py-2 text-sm text-slate-500">
-                    Nenhuma {ROTULO_STATUS_NC[coluna.status].toLowerCase()}.
+                    Nenhuma nesta fase.
                   </p>
                 )}
               </div>
@@ -270,6 +258,75 @@ export default async function NcsPage({
           </ul>
         </details>
       )}
+    </div>
+  );
+}
+
+/**
+ * Botões de movimentação do card, contextuais ao status (fluxo de
+ * governança). Cada botão é um form de server action inline.
+ */
+function CardAcoes({
+  nc,
+  podeValidar,
+}: {
+  nc: { id: string; status: string };
+  podeValidar: boolean;
+}) {
+  const botao = (
+    label: string,
+    destino: "ABERTA" | "EM_ANDAMENTO" | "AGUARDANDO_VALIDACAO" | "RESOLVIDA",
+    tom: "voltar" | "avancar",
+  ) => (
+    <form
+      action={async () => {
+        "use server";
+        await moverNC(nc.id, destino);
+      }}
+    >
+      <button
+        type="submit"
+        className={
+          tom === "voltar"
+            ? "rounded-md px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-100"
+            : "rounded-md px-2 py-0.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+        }
+      >
+        {label}
+      </button>
+    </form>
+  );
+
+  // EM_CONTESTACAO aguarda decisão humana (feita na tela de detalhe) — sem
+  // movimentação automática no card
+  if (nc.status === "EM_CONTESTACAO") {
+    return (
+      <div className="border-t border-slate-100 px-3 py-1.5 text-xs text-orange-700">
+        Aguardando decisão da contestação
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between border-t border-slate-100 px-2 py-1.5">
+      {nc.status === "ABERTA" && <span />}
+      {nc.status === "EM_ANDAMENTO" && botao("◀ Voltar", "ABERTA", "voltar")}
+      {nc.status === "AGUARDANDO_VALIDACAO" &&
+        botao("◀ Devolver", "EM_ANDAMENTO", "voltar")}
+      {nc.status === "RESOLVIDA" &&
+        botao("◀ Reabrir", "EM_ANDAMENTO", "voltar")}
+
+      {nc.status === "ABERTA" &&
+        botao("Iniciar ▶", "EM_ANDAMENTO", "avancar")}
+      {nc.status === "EM_ANDAMENTO" &&
+        botao("Concluir ▶", "AGUARDANDO_VALIDACAO", "avancar")}
+      {nc.status === "AGUARDANDO_VALIDACAO" &&
+        (podeValidar ? (
+          botao("Validar ▶", "RESOLVIDA", "avancar")
+        ) : (
+          <span className="px-2 text-xs text-slate-400">aguarda validação</span>
+        ))}
+      {nc.status === "RESOLVIDA" && <span />}
     </div>
   );
 }

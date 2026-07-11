@@ -70,7 +70,9 @@ enum OrigemNC {
 
 enum StatusNC {
   ABERTA
+  EM_CONTESTACAO // avaliado contestou; aguarda decisão da Controladoria
   EM_ANDAMENTO
+  AGUARDANDO_VALIDACAO // ações concluídas; aguarda validação de um superior
   RESOLVIDA
   CANCELADA
 }
@@ -146,6 +148,8 @@ model Usuario {
   posto            Posto?            @relation(fields: [postoId], references: [id])
   visitasCriadas   Visita[]          @relation("VisitaCriadaPor")
   ncsResponsavel   NaoConformidade[] @relation("NCResponsavel")
+  ncsContestadas   NaoConformidade[] @relation("NCContestante")
+  ncsValidadas     NaoConformidade[] @relation("NCValidador")
   acoesResponsavel Acao[]            @relation("AcaoResponsavel")
   acoesPlano       AcaoPlano[]       @relation("AcaoPlanoResponsavel")
   auditorias       Auditoria[]
@@ -545,14 +549,32 @@ model NaoConformidade {
   prazo         DateTime?
   dataConclusao DateTime?
 
+  // ---- GOVERNANÇA ----
+  // reincidência: nº de ocorrências anteriores da MESMA falha (posto +
+  // origem + pergunta) em visitas enviadas antes desta. Snapshot no envio.
+  reincidencia Int @default(0)
+
+  // contestação (réplica do avaliado antes de a NC virar definitiva)
+  contestacao        String?   @db.Text
+  contestadaPorId    String?
+  contestadaEm       DateTime?
+  decisaoContestacao String?   @db.Text // nota da Controladoria ao decidir
+
+  // validação da correção (superior confere antes de RESOLVER)
+  validadaPorId String?
+  validadaEm    DateTime?
+
   criadoEm DateTime @default(now())
 
-  visita      Visita   @relation(fields: [visitaId], references: [id])
-  pergunta    Pergunta? @relation(fields: [perguntaId], references: [id])
-  responsavel Usuario? @relation("NCResponsavel", fields: [responsavelId], references: [id])
-  acoes       Acao[]
+  visita        Visita    @relation(fields: [visitaId], references: [id])
+  pergunta      Pergunta? @relation(fields: [perguntaId], references: [id])
+  responsavel   Usuario?  @relation("NCResponsavel", fields: [responsavelId], references: [id])
+  contestadaPor Usuario?  @relation("NCContestante", fields: [contestadaPorId], references: [id])
+  validadaPor   Usuario?  @relation("NCValidador", fields: [validadaPorId], references: [id])
+  acoes         Acao[]
 
   @@index([status, prioridade])
+  @@index([reincidencia])
 }
 
 model Acao {
