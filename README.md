@@ -121,26 +121,56 @@ registra a base usada (`[link-avaliacao] …`).*
 
 ## Checklist de go-live (produção)
 
-1. **Fotos permanentes** — crie um bucket S3-compatível (Cloudflare R2 é
-   grátis até 10 GB) e configure no serviço do Railway:
-   `STORAGE_DRIVER=s3`, `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION=auto`,
-   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Sem isso, o filesystem do
-   Railway é efêmero e **as fotos somem a cada deploy**.
-2. **Usuários reais** — em *Usuários*, crie seu administrador definitivo
+Rode a qualquer momento `npm run verificar:prontidao` (no shell do serviço,
+com as variáveis reais) — ele checa AUTH_SECRET, storage, APP_URL, usuários
+demo ativos, admin real, meta, questionário ativo e conexão com o banco, e
+retorna código de erro se houver bloqueio.
+
+### Infraestrutura (Railway)
+
+1. **`AUTH_SECRET`** — obrigatório em runtime (a app lança erro sem ele).
+   Gere com `openssl rand -hex 32` e defina no serviço.
+2. **`DATABASE_URL`** — reference variable do addon MySQL do Railway.
+3. **Pré-deploy** — configure o comando de deploy para aplicar as migrações
+   e (re)criar o questionário oficial idempotente:
+   `npx prisma migrate deploy && npx tsx prisma/questionario-oficial.ts`.
+4. **Fotos permanentes (`STORAGE_DRIVER=s3`)** — crie um bucket
+   S3-compatível (Cloudflare R2 é grátis até 10 GB) e configure
+   `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`,
+   `S3_SECRET_ACCESS_KEY`. Sem isso o filesystem do Railway é efêmero e
+   **as fotos somem a cada deploy**.
+5. **`APP_URL`** — deixe **em branco** em produção (o link do avaliador é
+   montado a partir do proxy). Só defina se apontar para o domínio público;
+   **nunca** para localhost.
+6. **Health-check** — aponte o monitor de uptime (ou o healthcheck do
+   Railway) para `GET /api/health` (200 = app + banco ok, 503 = banco fora).
+7. **Backup do banco** — habilite backups do volume MySQL no Railway e
+   **teste um restore** pelo menos uma vez.
+
+### Dados e acesso (pelo painel, após o deploy)
+
+8. **Usuários reais** — em *Usuários*, crie seu administrador definitivo
    (senha forte), saia, entre com ele e **desative** os usuários demo
-   (`*@clienteoculto.dev`, senha `senha123`). Login de inativo é bloqueado
-   e ninguém consegue desativar a si mesmo.
-3. **Meta da rede** — confira em *Metas* o score mínimo vigente (dispara NC
-   automática e alimenta o radar/benchmark do dashboard).
-4. **Questionário oficial** — revise pesos/criticidades em *Questionários*;
-   com visitas enviadas ele fica imutável (crie nova versão para mudar).
-5. **Backup do banco** — habilite backups do volume MySQL no Railway.
-6. **E-mails (opcional)** — configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
-   `SMTP_PASS` e `SMTP_FROM` para receber alerta de NC aberta; sem SMTP o
-   sistema funciona normalmente (envio vira log). Para o resumo diário de
-   pendências vencidas, defina `CRON_SECRET` e agende um cron (Railway cron
-   ou cron-job.org) chamando
-   `GET /api/tarefas/notificar` com `Authorization: Bearer $CRON_SECRET`.
+   (`*@clienteoculto.dev`, senha `senha123`). Login de inativo é bloqueado,
+   a sessão de um usuário desativado cai na hora, e ninguém desativa a si
+   mesmo.
+9. **Meta da rede** — confira em *Metas* o score mínimo vigente (dispara NC
+   automática e alimenta o radar/benchmark). Metas por **etapa** também
+   geram NC específica quando o bloco fica abaixo da sua meta.
+10. **Questionário oficial** — revise pesos/criticidades em *Questionários*;
+    com visitas enviadas ele fica imutável (crie nova versão para mudar).
+
+### Opcionais (recomendados)
+
+11. **E-mails (`SMTP_*`)** — `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+    `SMTP_PASS`, `SMTP_FROM`. Habilita alerta de NC aberta, resumo de
+    vencidos **e o link de "esqueci minha senha"**. Sem SMTP o sistema
+    funciona (envios viram log), mas a recuperação de senha não chega ao
+    usuário.
+12. **Cron de vencidos (`CRON_SECRET`)** — defina e agende um cron (Railway
+    cron ou cron-job.org) chamando `GET /api/tarefas/notificar` com
+    `Authorization: Bearer $CRON_SECRET` uma vez ao dia. Sem ele a rota
+    responde 503.
 
 ## Estrutura
 
